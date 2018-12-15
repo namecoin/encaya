@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
 	"io"
@@ -165,8 +167,38 @@ WeMJKeEImKQOsr0xbpNlMARR3eICIEYyUKju6L3FbFWLxBR2NGfko0ykQj2tkAMq
 	go popCachedCertLater(domain)
 }
 
+func getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
+	restrictCert, restrictPriv, err := safetlsa.GenerateTLDExclusionCA("bit", rootCert, rootPriv)
+	if err != nil {
+		log.Print(err)
+	}
+
+	restrictCertPem := pem.EncodeToMemory(&pem.Block{
+		Type: "CERTIFICATE",
+		Bytes: restrictCert,
+	})
+	restrictCertPemString := string(restrictCertPem)
+
+	restrictPrivBytes, err := x509.MarshalECPrivateKey(restrictPriv.(*ecdsa.PrivateKey))
+	if err != nil {
+		log.Printf("Unable to marshal ECDSA private key: %v", err)
+	}
+
+	restrictPrivPem := pem.EncodeToMemory(&pem.Block{
+		Type: "EC PRIVATE KEY",
+		Bytes: restrictPrivBytes,
+	})
+	restrictPrivPemString := string(restrictPrivPem)
+
+	io.WriteString(w, restrictCertPemString)
+	io.WriteString(w, "\n\n")
+	io.WriteString(w, restrictPrivPemString)
+}
+
 func main() {
-	rootCert, rootPriv, err := safetlsa.GenerateRootCA("Namecoin")
+	var err error
+
+	rootCert, rootPriv, err = safetlsa.GenerateRootCA("Namecoin")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -188,10 +220,12 @@ func main() {
 	})
 	tldCertPemString = string(tldCertPem)
 
-	rootPriv = nil
+	// TODO: find a way to delete the root private key again, without impacting the exclusion CA generator.
+	//rootPriv = nil
 
 	domainCertCache = map[string][]cachedCert{}
 
 	http.HandleFunc("/lookup", lookupHandler)
+	http.HandleFunc("/get-new-negative-ca", getNewNegativeCAHandler)
 	log.Fatal(http.ListenAndServe("127.0.0.1:8080", nil))
 }
