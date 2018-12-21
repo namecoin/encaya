@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/miekg/dns"
 
+	"github.com/namecoin/crosssign"
 	"github.com/namecoin/safetlsa"
 )
 
@@ -33,9 +35,13 @@ var (
 	tldCertPemString string
 	domainCertCache map[string][]cachedCert // TODO: stream isolation
 	domainCertCacheMutex sync.RWMutex
+	negativeCertCache map[string][]cachedCert // TODO: stream isolation
+	negativeCertCacheMutex sync.RWMutex
+	originalCertCache map[string][]cachedCert // TODO: stream isolation
+	originalCertCacheMutex sync.RWMutex
 )
 
-func getCachedCerts(commonName string) (string, bool) {
+func getCachedDomainCerts(commonName string) (string, bool) {
 	needRefresh := true
 	results := ""
 
@@ -52,7 +58,7 @@ func getCachedCerts(commonName string) (string, bool) {
 	return results, needRefresh
 }
 
-func cacheCert(commonName, certPem string) {
+func cacheDomainCert(commonName, certPem string) {
 	cert := cachedCert{
 		expiration: time.Now().Add(2 * time.Minute),
 		certPem: certPem,
@@ -67,7 +73,7 @@ func cacheCert(commonName, certPem string) {
 	domainCertCacheMutex.Unlock()
 }
 
-func popCachedCertLater(commonName string) {
+func popCachedDomainCertLater(commonName string) {
 	time.Sleep(2 * time.Minute)
 
 	domainCertCacheMutex.Lock()
@@ -79,6 +85,74 @@ func popCachedCertLater(commonName string) {
 		}
 	}
 	domainCertCacheMutex.Unlock()
+}
+
+func getCachedNegativeCerts(commonName string) (string, bool) {
+	needRefresh := true
+	results := ""
+
+	negativeCertCacheMutex.RLock()
+	for _, cert := range negativeCertCache[commonName] {
+		// Negative certs don't expire
+		needRefresh = false
+
+		results = results + cert.certPem + "\n\n"
+
+		// We only need 1 negative cert
+		break
+	}
+	negativeCertCacheMutex.RUnlock()
+
+	return results, needRefresh
+}
+
+func cacheNegativeCert(commonName, certPem string) {
+	cert := cachedCert{
+		expiration: time.Now().Add(2 * time.Minute),
+		certPem: certPem,
+	}
+
+	negativeCertCacheMutex.Lock()
+	if negativeCertCache[commonName] == nil {
+		negativeCertCache[commonName] = []cachedCert{cert}
+	} else {
+		negativeCertCache[commonName] = append(negativeCertCache[commonName], cert)
+	}
+	negativeCertCacheMutex.Unlock()
+}
+
+func getCachedOriginalFromSerial(serial string) (string, bool) {
+	needRefresh := true
+	results := ""
+
+	originalCertCacheMutex.RLock()
+	for _, cert := range originalCertCache[serial] {
+		// Original certs don't expire
+		needRefresh = false
+
+		results = results + cert.certPem + "\n\n"
+
+		// We only need 1 original cert
+		break
+	}
+	originalCertCacheMutex.RUnlock()
+
+	return results, needRefresh
+}
+
+func cacheOriginalFromSerial(serial, certPem string) {
+	cert := cachedCert{
+		expiration: time.Now().Add(2 * time.Minute),
+		certPem: certPem,
+	}
+
+	originalCertCacheMutex.Lock()
+	if originalCertCache[serial] == nil {
+		originalCertCache[serial] = []cachedCert{cert}
+	} else {
+		originalCertCache[serial] = append(originalCertCache[serial], cert)
+	}
+	originalCertCacheMutex.Unlock()
 }
 
 func lookupHandler(w http.ResponseWriter, req *http.Request) {
@@ -99,7 +173,7 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	cacheResults, needRefresh := getCachedCerts(domain)
+	cacheResults, needRefresh := getCachedDomainCerts(domain)
 	if !needRefresh {
 		io.WriteString(w, cacheResults)
 		return
@@ -163,8 +237,8 @@ WeMJKeEImKQOsr0xbpNlMARR3eICIEYyUKju6L3FbFWLxBR2NGfko0ykQj2tkAMq
 
 	io.WriteString(w, cacheResults + "\n\n" + safeCertPem)
 
-	go cacheCert(domain, safeCertPem)
-	go popCachedCertLater(domain)
+	go cacheDomainCert(domain, safeCertPem)
+	go popCachedDomainCertLater(domain)
 }
 
 func getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
@@ -193,6 +267,64 @@ func getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
 	io.WriteString(w, restrictCertPemString)
 	io.WriteString(w, "\n\n")
 	io.WriteString(w, restrictPrivPemString)
+}
+
+func crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
+	toSignPEM := req.FormValue("to-sign")
+	signerCertPEM := req.FormValue("signer-cert")
+	signerKeyPEM := req.FormValue("signer-key")
+
+	cacheKeyArray := sha256.Sum256([]byte(toSignPEM + "\n\n" + signerCertPEM + "\n\n" + signerKeyPEM + "\n\n"))
+	cacheKey := hex.EncodeToString(cacheKeyArray[:])
+
+	cacheResults, needRefresh := getCachedNegativeCerts(cacheKey)
+	if !needRefresh {
+		io.WriteString(w, cacheResults)
+		return
+	}
+
+	// TODO: check for trailing data and for incorrect block type
+	toSignBlock, _ := pem.Decode([]byte(toSignPEM))
+	signerCertBlock, _ := pem.Decode([]byte(signerCertPEM))
+	signerKeyBlock, _ := pem.Decode([]byte(signerKeyPEM))
+
+	// TODO: support non-EC keys
+	signerKey, err := x509.ParseECPrivateKey(signerKeyBlock.Bytes)
+	if err != nil {
+		log.Printf("Unable to parse ECDSA private key: %v", err)
+		return
+	}
+
+	resultBytes, err := crosssign.CrossSign(toSignBlock.Bytes, signerCertBlock.Bytes, signerKey)
+	if err != nil {
+		log.Printf("Unable to cross-sign: %v", err)
+		return
+	}
+
+	resultPEM := pem.EncodeToMemory(&pem.Block{
+		Type: "CERTIFICATE",
+		Bytes: resultBytes,
+	})
+	resultPEMString := string(resultPEM)
+
+	resultParsed, err := x509.ParseCertificate(resultBytes)
+	if err != nil {
+		log.Printf("Unable to extract serial number from cross-signed CA: %s", err)
+	}
+
+	io.WriteString(w, resultPEMString)
+
+	cacheNegativeCert(cacheKey, resultPEMString)
+	cacheOriginalFromSerial(resultParsed.SerialNumber.String(), toSignPEM)
+}
+
+func originalFromSerialHandler(w http.ResponseWriter, req *http.Request) {
+	serial := req.FormValue("serial")
+
+	cacheResults, needRefresh := getCachedOriginalFromSerial(serial)
+	if !needRefresh {
+		io.WriteString(w, cacheResults)
+	}
 }
 
 func main() {
@@ -224,8 +356,12 @@ func main() {
 	//rootPriv = nil
 
 	domainCertCache = map[string][]cachedCert{}
+	negativeCertCache = map[string][]cachedCert{}
+	originalCertCache = map[string][]cachedCert{}
 
 	http.HandleFunc("/lookup", lookupHandler)
 	http.HandleFunc("/get-new-negative-ca", getNewNegativeCAHandler)
+	http.HandleFunc("/cross-sign-ca", crossSignCAHandler)
+	http.HandleFunc("/original-from-serial", originalFromSerialHandler)
 	log.Fatal(http.ListenAndServe("127.0.0.1:8080", nil))
 }
