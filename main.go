@@ -189,6 +189,7 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 	qparams := qlib.DefaultParams()
 	qparams.Ad = true
 	qparams.Fallback = true
+	qparams.Tcp = true // Workaround for https://github.com/miekg/exdns/issues/19
 	result, err := qparams.Do([]string{"TLSA", "_443._tcp." + domain})
 	if err != nil {
 		log.Printf("qlib error: %s", err)
@@ -201,8 +202,12 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		// Return code wasn't success, return an empty cert list
 		return
 	}
-	if dnsResponse.MsgHdr.AuthenticatedData == false {
-		// Records aren't DNSSEC-signed, return an empty cert list
+	if dnsResponse.MsgHdr.AuthenticatedData == false && dnsResponse.MsgHdr.Authoritative == false {
+		// For security reasons, we only trust records that are
+		// authenticated (e.g. server is Unbound and has verified
+		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
+		// the owner of the requested zone).  If neither is the case,
+		// then return an empty cert list.
 		return
 	}
 	for _, rr := range dnsResponse.Answer {
