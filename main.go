@@ -16,6 +16,7 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/namecoin/crosssign"
+	"github.com/namecoin/qlib"
 	"github.com/namecoin/safetlsa"
 )
 
@@ -158,9 +159,6 @@ func cacheOriginalFromSerial(serial, certPem string) {
 func lookupHandler(w http.ResponseWriter, req *http.Request) {
 	domain := req.FormValue("domain")
 
-	var dummyCert string
-	var dummyTLSA dns.TLSA
-
 	if domain == "Namecoin Root CA" {
 		io.WriteString(w, rootCertPemString)
 
@@ -179,66 +177,60 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if domain == "test-ca.nf.bit Domain CA" {
-		//dummyPubB64 := "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEZrJOMvCZFJspUsEiwKXN1S2cIEYiaTFq7p9oQ+InUxJW6LDiqcy8TGDy0zATAZ7zSY1+KcWtmTb65hQ3RcQHw=="
-		// Converted to hex manually via https://cryptii.com/pipes/base64-to-hex
+	domain = strings.TrimSuffix(domain, " Domain CA")
 
-		dummyTLSA = dns.TLSA{
-			Hdr: dns.RR_Header{Name: "", Rrtype: dns.TypeTLSA, Class: dns.ClassINET,
-				Ttl: 600},
-			Usage:        uint8(2),
-			Selector:     uint8(1),
-			MatchingType: uint8(0),
-			Certificate:  strings.ToUpper("3059301306072a8648ce3d020106082a8648ce3d03010703420004119ac938cbc264526ca54b048b02973754b670811889a4c5abba7da10f889d4c495ba2c38aa732f13183cb4cc04c067bcd2635f8a716b664dbeb9850dd17101f"),
-		}
-	} else if domain == "nf.bit" {
-		dummyCert = `-----BEGIN CERTIFICATE-----
-MIIBsjCCAVigAwIBAgIUAK9zGEHB5luScHPKSmWPvVkFccQwCgYIKoZIzj0EAwIw
-NDEPMA0GA1UEAxMGbmYuYml0MSEwHwYDVQQFExhOYW1lY29pbiBUTFMgQ2VydGlm
-aWNhdGUwHhcNMTcwODA4MDAwMDAwWhcNMjIwODA4MDAwMDAwWjA0MQ8wDQYDVQQD
-EwZuZi5iaXQxITAfBgNVBAUTGE5hbWVjb2luIFRMUyBDZXJ0aWZpY2F0ZTBZMBMG
-ByqGSM49AgEGCCqGSM49AwEHA0IABOS/PY4iSlu21+T+DMbrzuCje5NVjicoymUq
-8nDGTClq3zjxjVQQQM9zNsAd2z89IpnYytKaUss9BlxFkiIJUF+jSDBGMA4GA1Ud
-DwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMBEG
-A1UdEQQKMAiCBm5mLmJpdDAKBggqhkjOPQQDAgNIADBFAiEAvMIgAFNv0XpiB5cU
-WeMJKeEImKQOsr0xbpNlMARR3eICIEYyUKju6L3FbFWLxBR2NGfko0ykQj2tkAMq
-0IlMmYSL
------END CERTIFICATE-----
-`
-		dummyBlock, _ := pem.Decode([]byte(dummyCert))
-
-		dummyHex := hex.EncodeToString(dummyBlock.Bytes)
-
-		dummyTLSA = dns.TLSA{
-			Hdr: dns.RR_Header{Name: "", Rrtype: dns.TypeTLSA, Class: dns.ClassINET,
-				Ttl: 600},
-			Usage:        uint8(3),
-			Selector:     uint8(0),
-			MatchingType: uint8(0),
-			Certificate:  strings.ToUpper(dummyHex),
-		}
-	} else {
+	if strings.Contains(domain, " ") {
+		// CommonNames that contain a space are usually CA's.  We
+		// already stripped the suffixes of Namecoin-formatted CA's, so
+		// if a space remains, just return.
 		return
 	}
 
-	safeCert, err := safetlsa.GetCertFromTLSA(domain, &dummyTLSA, tldCert, tldPriv)
+	qparams := qlib.DefaultParams()
+	qparams.Ad = true
+	qparams.Fallback = true
+	result, err := qparams.Do([]string{"TLSA", "_443._tcp." + domain})
 	if err != nil {
-		// TODO: quiet this warning
-		log.Printf("GetCertFromTLSA: %s", err)
+		log.Printf("qlib error: %s", err)
+	}
+	if result.ResponseMsg == nil {
 		return
 	}
+	dnsResponse := result.ResponseMsg
+	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess {
+		// Return code wasn't success, return an empty cert list
+		return
+	}
+	if dnsResponse.MsgHdr.AuthenticatedData == false {
+		// Records aren't DNSSEC-signed, return an empty cert list
+		return
+	}
+	for _, rr := range dnsResponse.Answer {
+		tlsa, ok := rr.(*dns.TLSA)
+		if !ok {
+			// Record isn't a TLSA record
+			continue
+		}
 
-	safeCertPemBytes := pem.EncodeToMemory(&pem.Block{
-		Type: "CERTIFICATE",
-		Bytes: safeCert,
-	})
+		safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, tldCert, tldPriv)
+		if err != nil {
+			// TODO: quiet this warning
+			log.Printf("GetCertFromTLSA: %s", err)
+			continue
+		}
 
-	safeCertPem := string(safeCertPemBytes)
+		safeCertPemBytes := pem.EncodeToMemory(&pem.Block{
+			Type: "CERTIFICATE",
+			Bytes: safeCert,
+		})
 
-	io.WriteString(w, cacheResults + "\n\n" + safeCertPem)
+		safeCertPem := string(safeCertPemBytes)
 
-	go cacheDomainCert(domain, safeCertPem)
-	go popCachedDomainCertLater(domain)
+		io.WriteString(w, cacheResults + "\n\n" + safeCertPem)
+
+		go cacheDomainCert(domain, safeCertPem)
+		go popCachedDomainCertLater(domain)
+	}
 }
 
 func getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
