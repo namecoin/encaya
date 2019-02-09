@@ -192,14 +192,26 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 	qparams.Tcp = true // Workaround for https://github.com/miekg/exdns/issues/19
 	result, err := qparams.Do([]string{"TLSA", "_443._tcp." + domain})
 	if err != nil {
+		// A DNS error occurred.
 		log.Printf("qlib error: %s", err)
+		w.WriteHeader(500)
+		return
 	}
 	if result.ResponseMsg == nil {
+		// A DNS error occurred (nil response).
+		w.WriteHeader(500)
 		return
 	}
 	dnsResponse := result.ResponseMsg
-	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess {
-		// Return code wasn't success, return an empty cert list
+	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
+		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
+		w.WriteHeader(500)
+		return
+	}
+	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
+		// TCP port 443 subdomain doesn't exist.
+		// That means the domain doesn't use DANE.
+		// Return an empty cert list
 		return
 	}
 	if dnsResponse.MsgHdr.AuthenticatedData == false && dnsResponse.MsgHdr.Authoritative == false {
