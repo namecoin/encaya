@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"gopkg.in/hlandau/easyconfig.v1"
+	"gopkg.in/hlandau/easyconfig.v1/cflag"
 
 	"github.com/namecoin/crosssign"
 	"github.com/namecoin/qlib"
@@ -40,6 +42,15 @@ var (
 	negativeCertCacheMutex sync.RWMutex
 	originalCertCache map[string][]cachedCert // TODO: stream isolation
 	originalCertCacheMutex sync.RWMutex
+)
+
+var (
+	flagGroup      = cflag.NewGroup(nil, "certdehydrate-dane-rest-api")
+	dnsAddressFlag = cflag.String(flagGroup, "nameserver", "", "Use this "+
+		"DNS server for DNS lookups.  (If left empty, the system "+
+		"resolver will be used.)")
+	dnsPortFlag    = cflag.Int(flagGroup, "port", 53, "Use this port for "+
+		"DNS lookups.")
 )
 
 func getCachedDomainCerts(commonName string) (string, bool) {
@@ -187,10 +198,22 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	qparams := qlib.DefaultParams()
+	qparams.Port = dnsPortFlag.Value()
 	qparams.Ad = true
 	qparams.Fallback = true
 	qparams.Tcp = true // Workaround for https://github.com/miekg/exdns/issues/19
-	result, err := qparams.Do([]string{"TLSA", "_443._tcp." + domain})
+
+	args := []string{}
+	// Set the custom DNS server if requested
+	if dnsAddressFlag.Value() != "" {
+		args = append(args, "@" + dnsAddressFlag.Value())
+	}
+	// Set qtype to TLSA
+	args = append(args, "TLSA")
+	// Set qname to TCP port 443 of requested hostname
+	args = append(args, "_443._tcp." + domain)
+
+	result, err := qparams.Do(args)
 	if err != nil {
 		// A DNS error occurred.
 		log.Printf("qlib error: %s", err)
@@ -339,9 +362,17 @@ func originalFromSerialHandler(w http.ResponseWriter, req *http.Request) {
 func main() {
 	var err error
 
+	config := easyconfig.Configurator{
+		ProgramName: "certdehydrate_dane_rest_api",
+	}
+	err = config.Parse(nil)
+	if err != nil {
+		log.Fatalf("Couldn't parse configuration: %s", err)
+	}
+
 	rootCert, rootPriv, err = safetlsa.GenerateRootCA("Namecoin")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Couldn't generate root CA: %s", err)
 	}
 
 	rootCertPem = pem.EncodeToMemory(&pem.Block{
@@ -352,7 +383,7 @@ func main() {
 
 	tldCert, tldPriv, err = safetlsa.GenerateTLDCA("bit", rootCert, rootPriv)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Couldn't generate TLD CA: %s", err)
 	}
 
 	tldCertPem = pem.EncodeToMemory(&pem.Block{
