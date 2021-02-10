@@ -223,8 +223,8 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	// Set qtype to TLSA
 	args = append(args, "TLSA")
-	// Set qname to TCP port 443 of requested hostname
-	args = append(args, "_443._tcp." + domain)
+	// Set qname to all protocols and all ports of requested hostname
+	args = append(args, "*." + domain)
 
 	result, err := qparams.Do(args)
 	if err != nil {
@@ -245,8 +245,8 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
-		// TCP port 443 subdomain doesn't exist.
-		// That means the domain doesn't use DANE.
+		// Wildcard subdomain doesn't exist.
+		// That means the domain doesn't use Namecoin-form DANE.
 		// Return an empty cert list
 		return
 	}
@@ -326,8 +326,8 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	// Set qtype to TLSA
 	args = append(args, "TLSA")
-	// Set qname to TCP port 443 of requested hostname
-	args = append(args, "_443._tcp." + domain)
+	// Set qname to all protocols and all ports of requested hostname
+	args = append(args, "*." + domain)
 
 	result, err := qparams.Do(args)
 	if err != nil {
@@ -348,8 +348,8 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
-		// TCP port 443 subdomain doesn't exist.
-		// That means the domain doesn't use DANE.
+		// Wildcard subdomain doesn't exist.
+		// That means the domain doesn't use Namecoin-form DANE.
 		// Return an empty cert list
 		w.WriteHeader(404)
 		return
