@@ -58,6 +58,8 @@ var (
 		"resolver will be used.)")
 	dnsPortFlag    = cflag.Int(flagGroup, "port", 53, "Use this port for "+
 		"DNS lookups.")
+	listenIP       = cflag.String(flagGroup, "listen-ip", "127.127.127.127",
+		"Listen on this IP address.")
 	listenHTTPS    = cflag.Bool(flagGroup, "listen-https", false,
 		"Listen on HTTPS (RFC 5280 Sec. 8 says you SHOULD NOT do this)")
 	generateCerts  = cflag.Bool(flagGroup, "generate-certs", false,
@@ -656,8 +658,9 @@ func main() {
 	http.HandleFunc("/cross-sign-ca", crossSignCAHandler)
 	http.HandleFunc("/original-from-serial", originalFromSerialHandler)
 	if listenHTTPS.Value() {
-		log.Fatal(http.ListenAndServeTLS(":443", "listen_chain.pem", "listen_key.pem", nil))
+		log.Fatal(http.ListenAndServeTLS(listenIP.Value() + ":443",
+			"listen_chain.pem", "listen_key.pem", nil))
 	} else {
-		log.Fatal(http.ListenAndServe(":80", nil))
+		log.Fatal(http.ListenAndServe(listenIP.Value() + ":80", nil))
 	}
 }
