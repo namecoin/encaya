@@ -58,8 +58,8 @@ var (
 		"resolver will be used.)")
 	dnsPortFlag    = cflag.Int(flagGroup, "port", 53, "Use this port for "+
 		"DNS lookups.")
-	listenHTTPS    = cflag.Bool(flagGroup, "listen-https", true,
-		"Listen on HTTPS")
+	listenHTTPS    = cflag.Bool(flagGroup, "listen-https", false,
+		"Listen on HTTPS (RFC 5280 Sec. 8 says you SHOULD NOT do this)")
 	generateCerts  = cflag.Bool(flagGroup, "generate-certs", false,
 		"Generate certificates and exit")
 )
