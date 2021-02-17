@@ -52,7 +52,7 @@ var (
 )
 
 var (
-	flagGroup      = cflag.NewGroup(nil, "certdehydrate-dane-rest-api")
+	flagGroup      = cflag.NewGroup(nil, "encaya")
 	dnsAddressFlag = cflag.String(flagGroup, "nameserver", "", "Use this "+
 		"DNS server for DNS lookups.  (If left empty, the system "+
 		"resolver will be used.)")
@@ -502,7 +502,7 @@ func main() {
 	var listenCertPemString string
 
 	config := easyconfig.Configurator{
-		ProgramName: "certdehydrate_dane_rest_api",
+		ProgramName: "encaya",
 	}
 	err = config.Parse(nil)
 	if err != nil {
