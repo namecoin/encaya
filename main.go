@@ -544,6 +544,9 @@ func main() {
 
 		serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 		serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+		if err != nil {
+			log.Fatalf("Unable to generate serial number: %s", err)
+		}
 
 		listenPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
