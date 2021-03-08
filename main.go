@@ -181,23 +181,35 @@ func cacheOriginalFromSerial(serial, certPem string) {
 }
 
 func lookupHandler(w http.ResponseWriter, req *http.Request) {
+	var err error
+
 	domain := req.FormValue("domain")
 
 	if domain == "Namecoin Root CA" {
-		io.WriteString(w, rootCertPemString)
+		_, err = io.WriteString(w, rootCertPemString)
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
 
 		return
 	}
 
 	if domain == ".bit TLD CA" {
-		io.WriteString(w, tldCertPemString)
+		_, err = io.WriteString(w, tldCertPemString)
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
 
 		return
 	}
 
 	cacheResults, needRefresh := getCachedDomainCerts(domain)
 	if !needRefresh {
-		io.WriteString(w, cacheResults)
+		_, err = io.WriteString(w, cacheResults)
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
+
 		return
 	}
 
@@ -279,7 +291,10 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 
 		safeCertPem := string(safeCertPemBytes)
 
-		io.WriteString(w, cacheResults + "\n\n" + safeCertPem)
+		_, err = io.WriteString(w, cacheResults + "\n\n" + safeCertPem)
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
 
 		go cacheDomainCert(domain, safeCertPem)
 		go popCachedDomainCertLater(domain)
@@ -287,18 +302,26 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func aiaHandler(w http.ResponseWriter, req *http.Request) {
+	var err error
+
 	w.Header().Set("Content-Type", "application/pkix-cert")
 
 	domain := req.FormValue("domain")
 
 	if domain == "Namecoin Root CA" {
-		io.WriteString(w, string(rootCert))
+		_, err = io.WriteString(w, string(rootCert))
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
 
 		return
 	}
 
 	if domain == ".bit TLD CA" {
-		io.WriteString(w, string(tldCert))
+		_, err = io.WriteString(w, string(tldCert))
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
 
 		return
 	}
@@ -404,7 +427,10 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
-		io.WriteString(w, string(safeCert))
+		_, err = io.WriteString(w, string(safeCert))
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
 		break
 	}
 }
@@ -432,12 +458,25 @@ func getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
 	})
 	restrictPrivPemString := string(restrictPrivPem)
 
-	io.WriteString(w, restrictCertPemString)
-	io.WriteString(w, "\n\n")
-	io.WriteString(w, restrictPrivPemString)
+	_, err = io.WriteString(w, restrictCertPemString)
+	if err != nil {
+		log.Printf("write error: %s", err)
+	}
+
+	_, err = io.WriteString(w, "\n\n")
+	if err != nil {
+		log.Printf("write error: %s", err)
+	}
+
+	_, err = io.WriteString(w, restrictPrivPemString)
+	if err != nil {
+		log.Printf("write error: %s", err)
+	}
 }
 
 func crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
+	var err error
+
 	toSignPEM := req.FormValue("to-sign")
 	signerCertPEM := req.FormValue("signer-cert")
 	signerKeyPEM := req.FormValue("signer-key")
@@ -447,7 +486,11 @@ func crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
 
 	cacheResults, needRefresh := getCachedNegativeCerts(cacheKey)
 	if !needRefresh {
-		io.WriteString(w, cacheResults)
+		_, err = io.WriteString(w, cacheResults)
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
+
 		return
 	}
 
@@ -480,7 +523,10 @@ func crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
 		log.Printf("Unable to extract serial number from cross-signed CA: %s", err)
 	}
 
-	io.WriteString(w, resultPEMString)
+	_, err = io.WriteString(w, resultPEMString)
+	if err != nil {
+		log.Printf("write error: %s", err)
+	}
 
 	cacheNegativeCert(cacheKey, resultPEMString)
 	cacheOriginalFromSerial(resultParsed.SerialNumber.String(), toSignPEM)
@@ -491,7 +537,10 @@ func originalFromSerialHandler(w http.ResponseWriter, req *http.Request) {
 
 	cacheResults, needRefresh := getCachedOriginalFromSerial(serial)
 	if !needRefresh {
-		io.WriteString(w, cacheResults)
+		_, err := io.WriteString(w, cacheResults)
+		if err != nil {
+			log.Printf("write error: %s", err)
+		}
 	}
 }
 
