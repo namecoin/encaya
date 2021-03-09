@@ -644,14 +644,28 @@ func main() {
 			Bytes: listenPrivBytes,
 		})
 
-		ioutil.WriteFile("root_cert.pem", rootCertPem, 0600)
-		ioutil.WriteFile("root_key.pem", rootPrivPem, 0600)
+		err = ioutil.WriteFile("root_cert.pem", rootCertPem, 0600)
+		if err != nil {
+			log.Fatalf("Unable to write root cert: %s", err)
+		}
+
+		err = ioutil.WriteFile("root_key.pem", rootPrivPem, 0600)
+		if err != nil {
+			log.Fatalf("Unable to write root key: %s", err)
+		}
 
 		listenChainPemString := listenCertPemString + "\n\n" + tldCertPemString + "\n\n" + rootCertPemString
 		listenChainPem := []byte(listenChainPemString)
 
-		ioutil.WriteFile("listen_chain.pem", listenChainPem, 0600)
-		ioutil.WriteFile("listen_key.pem", listenPrivPem, 0600)
+		err = ioutil.WriteFile("listen_chain.pem", listenChainPem, 0600)
+		if err != nil {
+			log.Fatalf("Unable to write listen cert chain: %s", err)
+		}
+
+		err = ioutil.WriteFile("listen_key.pem", listenPrivPem, 0600)
+		if err != nil {
+			log.Fatalf("Unable to write listen key: %s", err)
+		}
 
 		return
 	}
