@@ -34,20 +34,22 @@ type cachedCert struct {
 }
 
 var (
-	rootCert               []byte
-	rootPriv               interface{}
-	rootCertPem            []byte
-	rootCertPemString      string
-	rootPrivPem            []byte
-	tldCert                []byte
-	tldPriv                interface{}
-	tldCertPem             []byte
-	tldCertPemString       string
-	domainCertCache        map[string][]cachedCert // TODO: stream isolation
+	rootCert          []byte
+	rootPriv          interface{}
+	rootCertPem       []byte
+	rootCertPemString string
+	rootPrivPem       []byte
+	tldCert           []byte
+	tldPriv           interface{}
+	tldCertPem        []byte
+	tldCertPemString  string
+	// These caches don't yet support stream isolation; see
+	// https://github.com/namecoin/encaya/issues/8
+	domainCertCache        map[string][]cachedCert
 	domainCertCacheMutex   sync.RWMutex
-	negativeCertCache      map[string][]cachedCert // TODO: stream isolation
+	negativeCertCache      map[string][]cachedCert
 	negativeCertCacheMutex sync.RWMutex
-	originalCertCache      map[string][]cachedCert // TODO: stream isolation
+	originalCertCache      map[string][]cachedCert
 	originalCertCacheMutex sync.RWMutex
 )
 
@@ -285,8 +287,6 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 
 		safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, tldCert, tldPriv)
 		if err != nil {
-			// TODO: quiet this warning
-			log.Printf("GetCertFromTLSA: %s", err)
 			continue
 		}
 
@@ -434,8 +434,6 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 
 		safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, tldCert, tldPriv)
 		if err != nil {
-			// TODO: quiet this warning
-			log.Printf("GetCertFromTLSA: %s", err)
 			continue
 		}
 
@@ -507,12 +505,10 @@ func crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// TODO: check for trailing data and for incorrect block type
 	toSignBlock, _ := pem.Decode([]byte(toSignPEM))
 	signerCertBlock, _ := pem.Decode([]byte(signerCertPEM))
 	signerKeyBlock, _ := pem.Decode([]byte(signerKeyPEM))
 
-	// TODO: support non-EC keys
 	signerKey, err := x509.ParseECPrivateKey(signerKeyBlock.Bytes)
 	if err != nil {
 		log.Printf("Unable to parse ECDSA private key: %v", err)
@@ -726,9 +722,6 @@ func main() {
 		Bytes: tldCert,
 	})
 	tldCertPemString = string(tldCertPem)
-
-	// TODO: find a way to delete the root private key again, without impacting the exclusion CA generator.
-	//rootPriv = nil
 
 	domainCertCache = map[string][]cachedCert{}
 	negativeCertCache = map[string][]cachedCert{}
