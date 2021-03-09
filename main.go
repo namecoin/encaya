@@ -269,7 +269,7 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if dnsResponse.MsgHdr.AuthenticatedData == false && dnsResponse.MsgHdr.Authoritative == false {
+	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
 		// For security reasons, we only trust records that are
 		// authenticated (e.g. server is Unbound and has verified
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
@@ -388,7 +388,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if dnsResponse.MsgHdr.AuthenticatedData == false && dnsResponse.MsgHdr.Authoritative == false {
+	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
 		// For security reasons, we only trust records that are
 		// authenticated (e.g. server is Unbound and has verified
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
