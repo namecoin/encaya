@@ -30,24 +30,24 @@ import (
 
 type cachedCert struct {
 	expiration time.Time
-	certPem string
+	certPem    string
 }
 
 var (
-	rootCert []byte
-	rootPriv interface{}
-	rootCertPem []byte
-	rootCertPemString string
-	rootPrivPem []byte
-	tldCert []byte
-	tldPriv interface{}
-	tldCertPem []byte
-	tldCertPemString string
-	domainCertCache map[string][]cachedCert // TODO: stream isolation
-	domainCertCacheMutex sync.RWMutex
-	negativeCertCache map[string][]cachedCert // TODO: stream isolation
+	rootCert               []byte
+	rootPriv               interface{}
+	rootCertPem            []byte
+	rootCertPemString      string
+	rootPrivPem            []byte
+	tldCert                []byte
+	tldPriv                interface{}
+	tldCertPem             []byte
+	tldCertPemString       string
+	domainCertCache        map[string][]cachedCert // TODO: stream isolation
+	domainCertCacheMutex   sync.RWMutex
+	negativeCertCache      map[string][]cachedCert // TODO: stream isolation
 	negativeCertCacheMutex sync.RWMutex
-	originalCertCache map[string][]cachedCert // TODO: stream isolation
+	originalCertCache      map[string][]cachedCert // TODO: stream isolation
 	originalCertCacheMutex sync.RWMutex
 )
 
@@ -56,13 +56,13 @@ var (
 	dnsAddressFlag = cflag.String(flagGroup, "nameserver", "", "Use this "+
 		"DNS server for DNS lookups.  (If left empty, the system "+
 		"resolver will be used.)")
-	dnsPortFlag    = cflag.Int(flagGroup, "port", 53, "Use this port for "+
+	dnsPortFlag = cflag.Int(flagGroup, "port", 53, "Use this port for "+
 		"DNS lookups.")
-	listenIP       = cflag.String(flagGroup, "listen-ip", "127.127.127.127",
+	listenIP = cflag.String(flagGroup, "listen-ip", "127.127.127.127",
 		"Listen on this IP address.")
-	listenHTTPS    = cflag.Bool(flagGroup, "listen-https", false,
+	listenHTTPS = cflag.Bool(flagGroup, "listen-https", false,
 		"Listen on HTTPS (RFC 5280 Sec. 8 says you SHOULD NOT do this)")
-	generateCerts  = cflag.Bool(flagGroup, "generate-certs", false,
+	generateCerts = cflag.Bool(flagGroup, "generate-certs", false,
 		"Generate certificates and exit")
 )
 
@@ -72,7 +72,7 @@ func getCachedDomainCerts(commonName string) (string, bool) {
 
 	domainCertCacheMutex.RLock()
 	for _, cert := range domainCertCache[commonName] {
-		if time.Until(cert.expiration) > 1 * time.Minute {
+		if time.Until(cert.expiration) > 1*time.Minute {
 			needRefresh = false
 		}
 
@@ -86,7 +86,7 @@ func getCachedDomainCerts(commonName string) (string, bool) {
 func cacheDomainCert(commonName, certPem string) {
 	cert := cachedCert{
 		expiration: time.Now().Add(2 * time.Minute),
-		certPem: certPem,
+		certPem:    certPem,
 	}
 
 	domainCertCacheMutex.Lock()
@@ -134,7 +134,7 @@ func getCachedNegativeCerts(commonName string) (string, bool) {
 func cacheNegativeCert(commonName, certPem string) {
 	cert := cachedCert{
 		expiration: time.Now().Add(2 * time.Minute),
-		certPem: certPem,
+		certPem:    certPem,
 	}
 
 	negativeCertCacheMutex.Lock()
@@ -168,7 +168,7 @@ func getCachedOriginalFromSerial(serial string) (string, bool) {
 func cacheOriginalFromSerial(serial, certPem string) {
 	cert := cachedCert{
 		expiration: time.Now().Add(2 * time.Minute),
-		certPem: certPem,
+		certPem:    certPem,
 	}
 
 	originalCertCacheMutex.Lock()
@@ -231,37 +231,42 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 	args := []string{}
 	// Set the custom DNS server if requested
 	if dnsAddressFlag.Value() != "" {
-		args = append(args, "@" + dnsAddressFlag.Value())
+		args = append(args, "@"+dnsAddressFlag.Value())
 	}
 	// Set qtype to TLSA
 	args = append(args, "TLSA")
 	// Set qname to all protocols and all ports of requested hostname
-	args = append(args, "*." + domain)
+	args = append(args, "*."+domain)
 
 	result, err := qparams.Do(args)
 	if err != nil {
 		// A DNS error occurred.
 		log.Printf("qlib error: %s", err)
 		w.WriteHeader(500)
+
 		return
 	}
+
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
 		w.WriteHeader(500)
 		return
 	}
+
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
 		w.WriteHeader(500)
 		return
 	}
+
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return an empty cert list
 		return
 	}
+
 	if dnsResponse.MsgHdr.AuthenticatedData == false && dnsResponse.MsgHdr.Authoritative == false {
 		// For security reasons, we only trust records that are
 		// authenticated (e.g. server is Unbound and has verified
@@ -270,6 +275,7 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		// then return an empty cert list.
 		return
 	}
+
 	for _, rr := range dnsResponse.Answer {
 		tlsa, ok := rr.(*dns.TLSA)
 		if !ok {
@@ -285,13 +291,13 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		}
 
 		safeCertPemBytes := pem.EncodeToMemory(&pem.Block{
-			Type: "CERTIFICATE",
+			Type:  "CERTIFICATE",
 			Bytes: safeCert,
 		})
 
 		safeCertPem := string(safeCertPemBytes)
 
-		_, err = io.WriteString(w, cacheResults + "\n\n" + safeCertPem)
+		_, err = io.WriteString(w, cacheResults+"\n\n"+safeCertPem)
 		if err != nil {
 			log.Printf("write error: %s", err)
 		}
@@ -345,31 +351,35 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 	args := []string{}
 	// Set the custom DNS server if requested
 	if dnsAddressFlag.Value() != "" {
-		args = append(args, "@" + dnsAddressFlag.Value())
+		args = append(args, "@"+dnsAddressFlag.Value())
 	}
 	// Set qtype to TLSA
 	args = append(args, "TLSA")
 	// Set qname to all protocols and all ports of requested hostname
-	args = append(args, "*." + domain)
+	args = append(args, "*."+domain)
 
 	result, err := qparams.Do(args)
 	if err != nil {
 		// A DNS error occurred.
 		log.Printf("qlib error: %s", err)
 		w.WriteHeader(500)
+
 		return
 	}
+
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
 		w.WriteHeader(500)
 		return
 	}
+
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
 		w.WriteHeader(500)
 		return
 	}
+
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
@@ -377,6 +387,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(404)
 		return
 	}
+
 	if dnsResponse.MsgHdr.AuthenticatedData == false && dnsResponse.MsgHdr.Authoritative == false {
 		// For security reasons, we only trust records that are
 		// authenticated (e.g. server is Unbound and has verified
@@ -388,6 +399,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	pubSHA256Hex := req.FormValue("pubsha256")
+
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
@@ -431,6 +443,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			log.Printf("write error: %s", err)
 		}
+
 		break
 	}
 }
@@ -442,7 +455,7 @@ func getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	restrictCertPem := pem.EncodeToMemory(&pem.Block{
-		Type: "CERTIFICATE",
+		Type:  "CERTIFICATE",
 		Bytes: restrictCert,
 	})
 	restrictCertPemString := string(restrictCertPem)
@@ -453,7 +466,7 @@ func getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	restrictPrivPem := pem.EncodeToMemory(&pem.Block{
-		Type: "EC PRIVATE KEY",
+		Type:  "EC PRIVATE KEY",
 		Bytes: restrictPrivBytes,
 	})
 	restrictPrivPemString := string(restrictPrivPem)
@@ -513,7 +526,7 @@ func crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	resultPEM := pem.EncodeToMemory(&pem.Block{
-		Type: "CERTIFICATE",
+		Type:  "CERTIFICATE",
 		Bytes: resultBytes,
 	})
 	resultPEMString := string(resultPEM)
@@ -545,15 +558,16 @@ func originalFromSerialHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	var err error
-
-	var listenCertPem []byte
-	var listenCertPemString string
+	var (
+		listenCertPem       []byte
+		listenCertPemString string
+	)
 
 	config := easyconfig.Configurator{
 		ProgramName: "encaya",
 	}
-	err = config.Parse(nil)
+
+	err := config.Parse(nil)
 	if err != nil {
 		log.Fatalf("Couldn't parse configuration: %s", err)
 	}
@@ -570,13 +584,13 @@ func main() {
 		}
 
 		rootCertPem = pem.EncodeToMemory(&pem.Block{
-			Type: "CERTIFICATE",
+			Type:  "CERTIFICATE",
 			Bytes: rootCert,
 		})
 		rootCertPemString = string(rootCertPem)
 
 		rootPrivPem = pem.EncodeToMemory(&pem.Block{
-			Type: "PRIVATE KEY",
+			Type:  "PRIVATE KEY",
 			Bytes: rootPrivBytes,
 		})
 
@@ -586,12 +600,13 @@ func main() {
 		}
 
 		tldCertPem = pem.EncodeToMemory(&pem.Block{
-			Type: "CERTIFICATE",
+			Type:  "CERTIFICATE",
 			Bytes: tldCert,
 		})
 		tldCertPemString = string(tldCertPem)
 
 		serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+
 		serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 		if err != nil {
 			log.Fatalf("Unable to generate serial number: %s", err)
@@ -634,13 +649,13 @@ func main() {
 		}
 
 		listenCertPem = pem.EncodeToMemory(&pem.Block{
-			Type: "CERTIFICATE",
+			Type:  "CERTIFICATE",
 			Bytes: listenCert,
 		})
 		listenCertPemString = string(listenCertPem)
 
 		listenPrivPem := pem.EncodeToMemory(&pem.Block{
-			Type: "PRIVATE KEY",
+			Type:  "PRIVATE KEY",
 			Bytes: listenPrivBytes,
 		})
 
@@ -674,6 +689,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to read root_cert.pem: %s", err)
 	}
+
 	rootCertPemString = string(rootCertPem)
 
 	rootCertBlock, _ := pem.Decode(rootCertPem)
@@ -706,7 +722,7 @@ func main() {
 	}
 
 	tldCertPem = pem.EncodeToMemory(&pem.Block{
-		Type: "CERTIFICATE",
+		Type:  "CERTIFICATE",
 		Bytes: tldCert,
 	})
 	tldCertPemString = string(tldCertPem)
@@ -723,10 +739,11 @@ func main() {
 	http.HandleFunc("/get-new-negative-ca", getNewNegativeCAHandler)
 	http.HandleFunc("/cross-sign-ca", crossSignCAHandler)
 	http.HandleFunc("/original-from-serial", originalFromSerialHandler)
+
 	if listenHTTPS.Value() {
-		log.Fatal(http.ListenAndServeTLS(listenIP.Value() + ":443",
+		log.Fatal(http.ListenAndServeTLS(listenIP.Value()+":443",
 			"listen_chain.pem", "listen_key.pem", nil))
 	} else {
-		log.Fatal(http.ListenAndServe(listenIP.Value() + ":80", nil))
+		log.Fatal(http.ListenAndServe(listenIP.Value()+":80", nil))
 	}
 }
