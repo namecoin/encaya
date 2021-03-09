@@ -252,6 +252,7 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
 		w.WriteHeader(500)
+
 		return
 	}
 
@@ -259,6 +260,7 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
 		w.WriteHeader(500)
+
 		return
 	}
 
@@ -339,6 +341,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		// already stripped the suffixes of Namecoin-formatted CA's, so
 		// if a space remains, just return.
 		w.WriteHeader(404)
+
 		return
 	}
 
@@ -370,6 +373,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
 		w.WriteHeader(500)
+
 		return
 	}
 
@@ -377,6 +381,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
 		w.WriteHeader(500)
+
 		return
 	}
 
@@ -385,6 +390,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return an empty cert list
 		w.WriteHeader(404)
+
 		return
 	}
 
@@ -395,6 +401,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		// the owner of the requested zone).  If neither is the case,
 		// then return an empty cert list.
 		w.WriteHeader(404)
+
 		return
 	}
 
@@ -404,6 +411,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// Requested public key hash is malformed.
 		w.WriteHeader(404)
+
 		return
 	}
 
@@ -512,12 +520,14 @@ func crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
 	signerKey, err := x509.ParseECPrivateKey(signerKeyBlock.Bytes)
 	if err != nil {
 		log.Printf("Unable to parse ECDSA private key: %v", err)
+
 		return
 	}
 
 	resultBytes, err := crosssign.CrossSign(toSignBlock.Bytes, signerCertBlock.Bytes, signerKey)
 	if err != nil {
 		log.Printf("Unable to cross-sign: %v", err)
+
 		return
 	}
 
