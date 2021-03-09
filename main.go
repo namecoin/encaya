@@ -243,25 +243,30 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		// A DNS error occurred.
 		log.Printf("qlib error: %s", err)
 		w.WriteHeader(500)
+
 		return
 	}
+
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
 		w.WriteHeader(500)
 		return
 	}
+
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
 		w.WriteHeader(500)
 		return
 	}
+
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return an empty cert list
 		return
 	}
+
 	if dnsResponse.MsgHdr.AuthenticatedData == false && dnsResponse.MsgHdr.Authoritative == false {
 		// For security reasons, we only trust records that are
 		// authenticated (e.g. server is Unbound and has verified
@@ -270,6 +275,7 @@ func lookupHandler(w http.ResponseWriter, req *http.Request) {
 		// then return an empty cert list.
 		return
 	}
+
 	for _, rr := range dnsResponse.Answer {
 		tlsa, ok := rr.(*dns.TLSA)
 		if !ok {
@@ -357,19 +363,23 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		// A DNS error occurred.
 		log.Printf("qlib error: %s", err)
 		w.WriteHeader(500)
+
 		return
 	}
+
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
 		w.WriteHeader(500)
 		return
 	}
+
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
 		w.WriteHeader(500)
 		return
 	}
+
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
@@ -377,6 +387,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(404)
 		return
 	}
+
 	if dnsResponse.MsgHdr.AuthenticatedData == false && dnsResponse.MsgHdr.Authoritative == false {
 		// For security reasons, we only trust records that are
 		// authenticated (e.g. server is Unbound and has verified
@@ -388,6 +399,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	pubSHA256Hex := req.FormValue("pubsha256")
+
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
@@ -431,6 +443,7 @@ func aiaHandler(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			log.Printf("write error: %s", err)
 		}
+
 		break
 	}
 }
@@ -545,15 +558,16 @@ func originalFromSerialHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	var err error
-
-	var listenCertPem []byte
-	var listenCertPemString string
+	var (
+		listenCertPem       []byte
+		listenCertPemString string
+	)
 
 	config := easyconfig.Configurator{
 		ProgramName: "encaya",
 	}
-	err = config.Parse(nil)
+
+	err := config.Parse(nil)
 	if err != nil {
 		log.Fatalf("Couldn't parse configuration: %s", err)
 	}
@@ -592,6 +606,7 @@ func main() {
 		tldCertPemString = string(tldCertPem)
 
 		serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+
 		serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 		if err != nil {
 			log.Fatalf("Unable to generate serial number: %s", err)
@@ -674,6 +689,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to read root_cert.pem: %s", err)
 	}
+
 	rootCertPemString = string(rootCertPem)
 
 	rootCertBlock, _ := pem.Decode(rootCertPem)
@@ -723,6 +739,7 @@ func main() {
 	http.HandleFunc("/get-new-negative-ca", getNewNegativeCAHandler)
 	http.HandleFunc("/cross-sign-ca", crossSignCAHandler)
 	http.HandleFunc("/original-from-serial", originalFromSerialHandler)
+
 	if listenHTTPS.Value() {
 		log.Fatal(http.ListenAndServeTLS(listenIP.Value()+":443",
 			"listen_chain.pem", "listen_key.pem", nil))
