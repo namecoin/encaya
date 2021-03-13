@@ -14,7 +14,6 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -66,11 +65,10 @@ type Config struct {
 	DNSPort    int    `default:"53" usage:"Use this port for DNS lookups."`
 	ListenIP   string `default:"127.127.127.127" usage:"Listen on this IP address."`
 
-	RootCert      string `default:"root_cert.pem" usage:"Sign with this root CA certificate."`
-	RootKey       string `default:"root_key.pem" usage:"Sign with this root CA private key."`
-	ListenChain   string `default:"listen_chain.pem" usage:"Listen with this TLS certificate chain."`
-	ListenKey     string `default:"listen_key.pem" usage:"Listen with this TLS private key."`
-	GenerateCerts bool   `default:"false" usage:"Generate certificates and exit."`
+	RootCert    string `default:"root_cert.pem" usage:"Sign with this root CA certificate."`
+	RootKey     string `default:"root_key.pem" usage:"Sign with this root CA private key."`
+	ListenChain string `default:"listen_chain.pem" usage:"Listen with this TLS certificate chain."`
+	ListenKey   string `default:"listen_key.pem" usage:"Listen with this TLS private key."`
 
 	ConfigDir string // path to interpret filenames relative to
 }
@@ -79,20 +77,19 @@ func (cfg *Config) cpath(s string) string {
 	return filepath.Join(cfg.ConfigDir, s)
 }
 
+func (cfg *Config) processPaths() {
+	cfg.RootCert = cfg.cpath(cfg.RootCert)
+	cfg.RootKey = cfg.cpath(cfg.RootKey)
+	cfg.ListenChain = cfg.cpath(cfg.ListenChain)
+	cfg.ListenKey = cfg.cpath(cfg.ListenKey)
+}
+
 func New(cfg *Config) (s *Server, err error) {
 	s = &Server{
 		cfg: *cfg,
 	}
 
-	s.cfg.RootCert = s.cfg.cpath(s.cfg.RootCert)
-	s.cfg.RootKey = s.cfg.cpath(s.cfg.RootKey)
-	s.cfg.ListenChain = s.cfg.cpath(s.cfg.ListenChain)
-	s.cfg.ListenKey = s.cfg.cpath(s.cfg.ListenKey)
-
-	if s.cfg.GenerateCerts {
-		s.generateCerts()
-		os.Exit(0)
-	}
+	s.cfg.processPaths()
 
 	s.rootCertPem, err = ioutil.ReadFile(s.cfg.RootCert)
 	if err != nil {
@@ -674,12 +671,18 @@ func (s *Server) originalFromSerialHandler(w http.ResponseWriter, req *http.Requ
 	}
 }
 
-func (s *Server) generateCerts() {
+func GenerateCerts(cfg *Config) {
 	var (
 		err                 error
 		listenCertPem       []byte
 		listenCertPemString string
 	)
+
+	s := &Server{
+		cfg: *cfg,
+	}
+
+	s.cfg.processPaths()
 
 	s.rootCert, s.rootPriv, err = safetlsa.GenerateRootCA("Namecoin")
 	if err != nil {
