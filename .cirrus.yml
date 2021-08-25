@@ -12,13 +12,6 @@ task:
   path_script:
     - source testdata/move_to_gopath.bash
   matrix:
-    - env:
-        GO111MODULE: "off"
-      fetch_script:
-        - go get -tags "$GOX_TAGS" -d -v -t github.com/$CIRRUS_REPO_FULL_NAME/...
-        - GOOS=windows go get -tags "$GOX_TAGS" -d -v -t github.com/$CIRRUS_REPO_FULL_NAME/...
-        - go generate github.com/namecoin/x509-compressed/...
-        - go get -tags "$GOX_TAGS" -d -v -t github.com/$CIRRUS_REPO_FULL_NAME/...
     - x509_script:
         - cd $(go env GOPATH)/src/github.com/"$CIRRUS_REPO_FULL_NAME"
         - cd ../
