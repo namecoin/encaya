@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -522,6 +523,12 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 
 		return
 	}
+
+	// Set short-term caching duration of half the cert validity
+	maxAge := safetlsa.ValidityShortTerm() / 2
+	maxAgeSeconds := int(maxAge / time.Second)
+	maxAgeStr := strconv.Itoa(maxAgeSeconds)
+	w.Header().Set("Cache-Control", "max-age="+maxAgeStr)
 
 	for _, rr := range dnsResponse.Answer {
 		tlsa, ok := rr.(*dns.TLSA)
