@@ -560,13 +560,18 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
+		// Success.  Send the cert as a response.
 		_, err = io.WriteString(w, string(safeCert))
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
 
-		break
+		// Only send 1 cert in the response.
+		return
 	}
+
+	// Requested public key hash doesn't match the DNS response.
+	w.WriteHeader(404)
 }
 
 func (s *Server) getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
