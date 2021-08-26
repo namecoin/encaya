@@ -142,6 +142,7 @@ func New(cfg *Config) (s *Server, err error) {
 	s.negativeCertCache = map[string][]cachedCert{}
 	s.originalCertCache = map[string][]cachedCert{}
 
+	http.HandleFunc("/", s.indexHandler)
 	http.HandleFunc("/lookup", s.lookupHandler)
 	http.HandleFunc("/aia", s.aiaHandler)
 	http.HandleFunc("/get-new-negative-ca", s.getNewNegativeCAHandler)
@@ -289,6 +290,30 @@ func (s *Server) cacheOriginalFromSerial(serial, certPem string) {
 		s.originalCertCache[serial] = append(s.originalCertCache[serial], cert)
 	}
 	s.originalCertCacheMutex.Unlock()
+}
+
+func (s *Server) indexHandler(w http.ResponseWriter, req *http.Request) {
+	indexMessage := `<!DOCTYPE html>
+<html>
+	<head>
+		<title>Namecoin Encaya</title>
+	</head>
+	<body>
+		<h1>Namecoin Encaya</h1>
+		<p>Welcome to Namecoin Encaya!  If you can see this message, Encaya is 
+		running.  If you want to use this Encaya instance on another device, 
+		you can install the Encaya Root CA from one of the below links:</p>
+		<ul>
+			<li><a href="/aia?domain=Namecoin%20Root%20CA">DER format</a></li>
+			<li><a href="/lookup?domain=Namecoin%20Root%20CA">PEM format</a></li>
+		</ul>
+	</body>
+</html>`
+
+	_, err := io.WriteString(w, indexMessage)
+	if err != nil {
+		log.Debuge(err, "write error")
+	}
 }
 
 func (s *Server) lookupHandler(w http.ResponseWriter, req *http.Request) {
