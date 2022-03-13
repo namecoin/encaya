@@ -292,7 +292,7 @@ func (s *Server) cacheOriginalFromSerial(serial, certPem string) {
 	s.originalCertCacheMutex.Unlock()
 }
 
-func (s *Server) indexHandler(w http.ResponseWriter, req *http.Request) {
+func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 	indexMessage := `<!DOCTYPE html>
 <html>
 	<head>
@@ -310,19 +310,19 @@ func (s *Server) indexHandler(w http.ResponseWriter, req *http.Request) {
 	</body>
 </html>`
 
-	_, err := io.WriteString(w, indexMessage)
+	_, err := io.WriteString(writer, indexMessage)
 	if err != nil {
 		log.Debuge(err, "write error")
 	}
 }
 
-func (s *Server) lookupHandler(w http.ResponseWriter, req *http.Request) {
+func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	var err error
 
 	domain := req.FormValue("domain")
 
 	if domain == "Namecoin Root CA" {
-		_, err = io.WriteString(w, s.rootCertPemString)
+		_, err = io.WriteString(writer, s.rootCertPemString)
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -331,7 +331,7 @@ func (s *Server) lookupHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if domain == ".bit TLD CA" {
-		_, err = io.WriteString(w, s.tldCertPemString)
+		_, err = io.WriteString(writer, s.tldCertPemString)
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -341,7 +341,7 @@ func (s *Server) lookupHandler(w http.ResponseWriter, req *http.Request) {
 
 	cacheResults, needRefresh := s.getCachedDomainCerts(domain)
 	if !needRefresh {
-		_, err = io.WriteString(w, cacheResults)
+		_, err = io.WriteString(writer, cacheResults)
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -378,14 +378,14 @@ func (s *Server) lookupHandler(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		w.WriteHeader(500)
+		writer.WriteHeader(500)
 
 		return
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		w.WriteHeader(500)
+		writer.WriteHeader(500)
 
 		return
 	}
@@ -393,7 +393,7 @@ func (s *Server) lookupHandler(w http.ResponseWriter, req *http.Request) {
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		w.WriteHeader(500)
+		writer.WriteHeader(500)
 
 		return
 	}
@@ -433,7 +433,7 @@ func (s *Server) lookupHandler(w http.ResponseWriter, req *http.Request) {
 
 		safeCertPem := string(safeCertPemBytes)
 
-		_, err = io.WriteString(w, cacheResults+"\n\n"+safeCertPem)
+		_, err = io.WriteString(writer, cacheResults+"\n\n"+safeCertPem)
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -443,15 +443,15 @@ func (s *Server) lookupHandler(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
+func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	var err error
 
-	w.Header().Set("Content-Type", "application/pkix-cert")
+	writer.Header().Set("Content-Type", "application/pkix-cert")
 
 	domain := req.FormValue("domain")
 
 	if domain == "Namecoin Root CA" {
-		_, err = io.WriteString(w, string(s.rootCert))
+		_, err = io.WriteString(writer, string(s.rootCert))
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -460,7 +460,7 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if domain == ".bit TLD CA" {
-		_, err = io.WriteString(w, string(s.tldCert))
+		_, err = io.WriteString(writer, string(s.tldCert))
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -474,7 +474,7 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 		// CommonNames that contain a space are usually CA's.  We
 		// already stripped the suffixes of Namecoin-formatted CA's, so
 		// if a space remains, just return.
-		w.WriteHeader(404)
+		writer.WriteHeader(404)
 
 		return
 	}
@@ -499,14 +499,14 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		w.WriteHeader(500)
+		writer.WriteHeader(500)
 
 		return
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		w.WriteHeader(500)
+		writer.WriteHeader(500)
 
 		return
 	}
@@ -514,7 +514,7 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		w.WriteHeader(500)
+		writer.WriteHeader(500)
 
 		return
 	}
@@ -523,7 +523,7 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return an empty cert list
-		w.WriteHeader(404)
+		writer.WriteHeader(404)
 
 		return
 	}
@@ -534,7 +534,7 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
 		// the owner of the requested zone).  If neither is the case,
 		// then return an empty cert list.
-		w.WriteHeader(404)
+		writer.WriteHeader(404)
 
 		return
 	}
@@ -544,7 +544,7 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
-		w.WriteHeader(404)
+		writer.WriteHeader(404)
 
 		return
 	}
@@ -553,7 +553,7 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 	maxAge := safetlsa.ValidityShortTerm() / 2
 	maxAgeSeconds := int(maxAge / time.Second)
 	maxAgeStr := strconv.Itoa(maxAgeSeconds)
-	w.Header().Set("Cache-Control", "max-age="+maxAgeStr)
+	writer.Header().Set("Cache-Control", "max-age="+maxAgeStr)
 
 	for _, rr := range dnsResponse.Answer {
 		tlsa, ok := rr.(*dns.TLSA)
@@ -586,7 +586,7 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// Success.  Send the cert as a response.
-		_, err = io.WriteString(w, string(safeCert))
+		_, err = io.WriteString(writer, string(safeCert))
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -596,10 +596,10 @@ func (s *Server) aiaHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Requested public key hash doesn't match the DNS response.
-	w.WriteHeader(404)
+	writer.WriteHeader(404)
 }
 
-func (s *Server) getNewNegativeCAHandler(w http.ResponseWriter, req *http.Request) {
+func (s *Server) getNewNegativeCAHandler(writer http.ResponseWriter, req *http.Request) {
 	restrictCert, restrictPriv, err := safetlsa.GenerateTLDExclusionCA("bit", s.rootCert, s.rootPriv)
 	if err != nil {
 		log.Debuge(err, "Error generating TLD exclusion CA")
@@ -622,23 +622,23 @@ func (s *Server) getNewNegativeCAHandler(w http.ResponseWriter, req *http.Reques
 	})
 	restrictPrivPemString := string(restrictPrivPem)
 
-	_, err = io.WriteString(w, restrictCertPemString)
+	_, err = io.WriteString(writer, restrictCertPemString)
 	if err != nil {
 		log.Debuge(err, "write error")
 	}
 
-	_, err = io.WriteString(w, "\n\n")
+	_, err = io.WriteString(writer, "\n\n")
 	if err != nil {
 		log.Debuge(err, "write error")
 	}
 
-	_, err = io.WriteString(w, restrictPrivPemString)
+	_, err = io.WriteString(writer, restrictPrivPemString)
 	if err != nil {
 		log.Debuge(err, "write error")
 	}
 }
 
-func (s *Server) crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
+func (s *Server) crossSignCAHandler(writer http.ResponseWriter, req *http.Request) {
 	var err error
 
 	toSignPEM := req.FormValue("to-sign")
@@ -650,7 +650,7 @@ func (s *Server) crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
 
 	cacheResults, needRefresh := s.getCachedNegativeCerts(cacheKey)
 	if !needRefresh {
-		_, err = io.WriteString(w, cacheResults)
+		_, err = io.WriteString(writer, cacheResults)
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -687,7 +687,7 @@ func (s *Server) crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
 		log.Debuge(err, "Unable to extract serial number from cross-signed CA")
 	}
 
-	_, err = io.WriteString(w, resultPEMString)
+	_, err = io.WriteString(writer, resultPEMString)
 	if err != nil {
 		log.Debuge(err, "write error")
 	}
@@ -696,12 +696,12 @@ func (s *Server) crossSignCAHandler(w http.ResponseWriter, req *http.Request) {
 	s.cacheOriginalFromSerial(resultParsed.SerialNumber.String(), toSignPEM)
 }
 
-func (s *Server) originalFromSerialHandler(w http.ResponseWriter, req *http.Request) {
+func (s *Server) originalFromSerialHandler(writer http.ResponseWriter, req *http.Request) {
 	serial := req.FormValue("serial")
 
 	cacheResults, needRefresh := s.getCachedOriginalFromSerial(serial)
 	if !needRefresh {
-		_, err := io.WriteString(w, cacheResults)
+		_, err := io.WriteString(writer, cacheResults)
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
@@ -715,43 +715,43 @@ func GenerateCerts(cfg *Config) {
 		listenCertPemString string
 	)
 
-	s := &Server{
+	srv := &Server{
 		cfg: *cfg,
 	}
 
-	s.cfg.processPaths()
+	srv.cfg.processPaths()
 
-	s.rootCert, s.rootPriv, err = safetlsa.GenerateRootCA("Namecoin")
+	srv.rootCert, srv.rootPriv, err = safetlsa.GenerateRootCA("Namecoin")
 	if err != nil {
 		log.Fatale(err, "Couldn't generate root CA")
 	}
 
-	rootPrivBytes, err := x509.MarshalPKCS8PrivateKey(s.rootPriv)
+	rootPrivBytes, err := x509.MarshalPKCS8PrivateKey(srv.rootPriv)
 	if err != nil {
 		log.Fatale(err, "Unable to marshal private key")
 	}
 
-	s.rootCertPem = pem.EncodeToMemory(&pem.Block{
+	srv.rootCertPem = pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
-		Bytes: s.rootCert,
+		Bytes: srv.rootCert,
 	})
-	s.rootCertPemString = string(s.rootCertPem)
+	srv.rootCertPemString = string(srv.rootCertPem)
 
-	s.rootPrivPem = pem.EncodeToMemory(&pem.Block{
+	srv.rootPrivPem = pem.EncodeToMemory(&pem.Block{
 		Type:  "PRIVATE KEY",
 		Bytes: rootPrivBytes,
 	})
 
-	s.tldCert, s.tldPriv, err = safetlsa.GenerateTLDCA("bit", s.rootCert, s.rootPriv)
+	srv.tldCert, srv.tldPriv, err = safetlsa.GenerateTLDCA("bit", srv.rootCert, srv.rootPriv)
 	if err != nil {
 		log.Fatale(err, "Couldn't generate TLD CA")
 	}
 
-	s.tldCertPem = pem.EncodeToMemory(&pem.Block{
+	srv.tldCertPem = pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
-		Bytes: s.tldCert,
+		Bytes: srv.tldCert,
 	})
-	s.tldCertPemString = string(s.tldCertPem)
+	srv.tldCertPemString = string(srv.tldCertPem)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 
@@ -786,13 +786,13 @@ func GenerateCerts(cfg *Config) {
 		DNSNames: []string{"aia.x--nmc.bit"},
 	}
 
-	tldCertParsed, err := x509.ParseCertificate(s.tldCert)
+	tldCertParsed, err := x509.ParseCertificate(srv.tldCert)
 	if err != nil {
 		log.Fatale(err, "Unable to parse TLD cert")
 	}
 
 	listenCert, err := x509.CreateCertificate(rand.Reader, &listenTemplate,
-		tldCertParsed, &listenPriv.PublicKey, s.tldPriv)
+		tldCertParsed, &listenPriv.PublicKey, srv.tldPriv)
 	if err != nil {
 		log.Fatale(err, "Unable to create listening cert")
 	}
@@ -808,26 +808,26 @@ func GenerateCerts(cfg *Config) {
 		Bytes: listenPrivBytes,
 	})
 
-	err = ioutil.WriteFile(s.cfg.RootCert, s.rootCertPem, 0600)
+	err = ioutil.WriteFile(srv.cfg.RootCert, srv.rootCertPem, 0600)
 	if err != nil {
-		log.Fatalef(err, "Unable to write %s", s.cfg.RootCert)
+		log.Fatalef(err, "Unable to write %s", srv.cfg.RootCert)
 	}
 
-	err = ioutil.WriteFile(s.cfg.RootKey, s.rootPrivPem, 0600)
+	err = ioutil.WriteFile(srv.cfg.RootKey, srv.rootPrivPem, 0600)
 	if err != nil {
-		log.Fatalef(err, "Unable to write %s", s.cfg.RootKey)
+		log.Fatalef(err, "Unable to write %s", srv.cfg.RootKey)
 	}
 
-	listenChainPemString := listenCertPemString + "\n\n" + s.tldCertPemString + "\n\n" + s.rootCertPemString
+	listenChainPemString := listenCertPemString + "\n\n" + srv.tldCertPemString + "\n\n" + srv.rootCertPemString
 	listenChainPem := []byte(listenChainPemString)
 
-	err = ioutil.WriteFile(s.cfg.ListenChain, listenChainPem, 0600)
+	err = ioutil.WriteFile(srv.cfg.ListenChain, listenChainPem, 0600)
 	if err != nil {
-		log.Fatalef(err, "Unable to write %s", s.cfg.ListenChain)
+		log.Fatalef(err, "Unable to write %s", srv.cfg.ListenChain)
 	}
 
-	err = ioutil.WriteFile(s.cfg.ListenKey, listenPrivPem, 0600)
+	err = ioutil.WriteFile(srv.cfg.ListenKey, listenPrivPem, 0600)
 	if err != nil {
-		log.Fatalef(err, "Unable to write %s", s.cfg.ListenKey)
+		log.Fatalef(err, "Unable to write %s", srv.cfg.ListenKey)
 	}
 }
