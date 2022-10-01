@@ -378,14 +378,14 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
@@ -393,7 +393,7 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
@@ -499,14 +499,14 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
@@ -514,7 +514,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
