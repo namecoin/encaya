@@ -11,9 +11,9 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -92,7 +92,7 @@ func New(cfg *Config) (s *Server, err error) {
 
 	s.cfg.processPaths()
 
-	s.rootCertPem, err = ioutil.ReadFile(s.cfg.RootCert)
+	s.rootCertPem, err = os.ReadFile(s.cfg.RootCert)
 	if err != nil {
 		log.Fatalef(err, "Unable to read %s", s.cfg.RootCert)
 	}
@@ -108,7 +108,7 @@ func New(cfg *Config) (s *Server, err error) {
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
 	s.rootCert = rootCertBlock.Bytes
 
-	s.rootPrivPem, err = ioutil.ReadFile(s.cfg.RootKey)
+	s.rootPrivPem, err = os.ReadFile(s.cfg.RootKey)
 	if err != nil {
 		log.Fatalef(err, "Unable to read %s", s.cfg.RootKey)
 	}
@@ -808,12 +808,12 @@ func GenerateCerts(cfg *Config) {
 		Bytes: listenPrivBytes,
 	})
 
-	err = ioutil.WriteFile(srv.cfg.RootCert, srv.rootCertPem, 0600)
+	err = os.WriteFile(srv.cfg.RootCert, srv.rootCertPem, 0600)
 	if err != nil {
 		log.Fatalef(err, "Unable to write %s", srv.cfg.RootCert)
 	}
 
-	err = ioutil.WriteFile(srv.cfg.RootKey, srv.rootPrivPem, 0600)
+	err = os.WriteFile(srv.cfg.RootKey, srv.rootPrivPem, 0600)
 	if err != nil {
 		log.Fatalef(err, "Unable to write %s", srv.cfg.RootKey)
 	}
@@ -821,12 +821,12 @@ func GenerateCerts(cfg *Config) {
 	listenChainPemString := listenCertPemString + "\n\n" + srv.tldCertPemString + "\n\n" + srv.rootCertPemString
 	listenChainPem := []byte(listenChainPemString)
 
-	err = ioutil.WriteFile(srv.cfg.ListenChain, listenChainPem, 0600)
+	err = os.WriteFile(srv.cfg.ListenChain, listenChainPem, 0600)
 	if err != nil {
 		log.Fatalef(err, "Unable to write %s", srv.cfg.ListenChain)
 	}
 
-	err = ioutil.WriteFile(srv.cfg.ListenKey, listenPrivPem, 0600)
+	err = os.WriteFile(srv.cfg.ListenKey, listenPrivPem, 0600)
 	if err != nil {
 		log.Fatalef(err, "Unable to write %s", srv.cfg.ListenKey)
 	}
