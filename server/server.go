@@ -378,14 +378,14 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
@@ -393,7 +393,7 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
@@ -474,7 +474,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 		// CommonNames that contain a space are usually CA's.  We
 		// already stripped the suffixes of Namecoin-formatted CA's, so
 		// if a space remains, just return.
-		writer.WriteHeader(404)
+		writer.WriteHeader(http.StatusNotFound)
 
 		return
 	}
@@ -499,14 +499,14 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
@@ -514,7 +514,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		writer.WriteHeader(500)
+		writer.WriteHeader(http.StatusInternalServerError)
 
 		return
 	}
@@ -523,7 +523,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return an empty cert list
-		writer.WriteHeader(404)
+		writer.WriteHeader(http.StatusNotFound)
 
 		return
 	}
@@ -534,7 +534,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
 		// the owner of the requested zone).  If neither is the case,
 		// then return an empty cert list.
-		writer.WriteHeader(404)
+		writer.WriteHeader(http.StatusNotFound)
 
 		return
 	}
@@ -544,7 +544,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
-		writer.WriteHeader(404)
+		writer.WriteHeader(http.StatusNotFound)
 
 		return
 	}
@@ -596,7 +596,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	// Requested public key hash doesn't match the DNS response.
-	writer.WriteHeader(404)
+	writer.WriteHeader(http.StatusNotFound)
 }
 
 func (s *Server) getNewNegativeCAHandler(writer http.ResponseWriter, req *http.Request) {
