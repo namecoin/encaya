@@ -5,7 +5,7 @@ import (
 
 	"github.com/hlandau/dexlogconfig"
 	"gopkg.in/hlandau/easyconfig.v1"
-	"gopkg.in/hlandau/service.v2"
+	service "gopkg.in/hlandau/service.v2"
 
 	"github.com/namecoin/encaya/server"
 )
