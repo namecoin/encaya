@@ -86,72 +86,72 @@ func (cfg *Config) processPaths() {
 }
 
 func New(cfg *Config) (*Server, error) {
-	s := &Server{
+	srv := &Server{
 		cfg: *cfg,
 	}
 
-	s.cfg.processPaths()
+	srv.cfg.processPaths()
 
 	var err error
 
-	s.rootCertPem, err = os.ReadFile(s.cfg.RootCert)
+	srv.rootCertPem, err = os.ReadFile(srv.cfg.RootCert)
 	if err != nil {
-		log.Fatalef(err, "Unable to read %s", s.cfg.RootCert)
+		log.Fatalef(err, "Unable to read %s", srv.cfg.RootCert)
 	}
 
-	s.rootCertPemString = string(s.rootCertPem)
+	srv.rootCertPemString = string(srv.rootCertPem)
 
-	rootCertBlock, _ := pem.Decode(s.rootCertPem)
+	rootCertBlock, _ := pem.Decode(srv.rootCertPem)
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
 	if rootCertBlock == nil {
-		log.Fatalef(err, "Unable to decode %s", s.cfg.RootCert)
+		log.Fatalef(err, "Unable to decode %s", srv.cfg.RootCert)
 	}
 
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
-	s.rootCert = rootCertBlock.Bytes
+	srv.rootCert = rootCertBlock.Bytes
 
-	s.rootPrivPem, err = os.ReadFile(s.cfg.RootKey)
+	srv.rootPrivPem, err = os.ReadFile(srv.cfg.RootKey)
 	if err != nil {
-		log.Fatalef(err, "Unable to read %s", s.cfg.RootKey)
+		log.Fatalef(err, "Unable to read %s", srv.cfg.RootKey)
 	}
 
-	rootPrivBlock, _ := pem.Decode(s.rootPrivPem)
+	rootPrivBlock, _ := pem.Decode(srv.rootPrivPem)
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
 	if rootPrivBlock == nil {
-		log.Fatalef(err, "Unable to decode %s", s.cfg.RootKey)
+		log.Fatalef(err, "Unable to decode %s", srv.cfg.RootKey)
 	}
 
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
 	rootPrivBytes := rootPrivBlock.Bytes
 
-	s.rootPriv, err = x509.ParsePKCS8PrivateKey(rootPrivBytes)
+	srv.rootPriv, err = x509.ParsePKCS8PrivateKey(rootPrivBytes)
 	if err != nil {
-		log.Fatalef(err, "Unable to parse %s", s.cfg.RootKey)
+		log.Fatalef(err, "Unable to parse %s", srv.cfg.RootKey)
 	}
 
-	s.tldCert, s.tldPriv, err = safetlsa.GenerateTLDCA("bit", s.rootCert, s.rootPriv)
+	srv.tldCert, srv.tldPriv, err = safetlsa.GenerateTLDCA("bit", srv.rootCert, srv.rootPriv)
 	if err != nil {
 		log.Fatale(err, "Couldn't generate TLD CA")
 	}
 
-	s.tldCertPem = pem.EncodeToMemory(&pem.Block{
+	srv.tldCertPem = pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
-		Bytes: s.tldCert,
+		Bytes: srv.tldCert,
 	})
-	s.tldCertPemString = string(s.tldCertPem)
+	srv.tldCertPemString = string(srv.tldCertPem)
 
-	s.domainCertCache = map[string][]cachedCert{}
-	s.negativeCertCache = map[string][]cachedCert{}
-	s.originalCertCache = map[string][]cachedCert{}
+	srv.domainCertCache = map[string][]cachedCert{}
+	srv.negativeCertCache = map[string][]cachedCert{}
+	srv.originalCertCache = map[string][]cachedCert{}
 
-	http.HandleFunc("/", s.indexHandler)
-	http.HandleFunc("/lookup", s.lookupHandler)
-	http.HandleFunc("/aia", s.aiaHandler)
-	http.HandleFunc("/get-new-negative-ca", s.getNewNegativeCAHandler)
-	http.HandleFunc("/cross-sign-ca", s.crossSignCAHandler)
-	http.HandleFunc("/original-from-serial", s.originalFromSerialHandler)
+	http.HandleFunc("/", srv.indexHandler)
+	http.HandleFunc("/lookup", srv.lookupHandler)
+	http.HandleFunc("/aia", srv.aiaHandler)
+	http.HandleFunc("/get-new-negative-ca", srv.getNewNegativeCAHandler)
+	http.HandleFunc("/cross-sign-ca", srv.crossSignCAHandler)
+	http.HandleFunc("/original-from-serial", srv.originalFromSerialHandler)
 
-	return s, nil
+	return srv, nil
 }
 
 func (s *Server) Start() error {
