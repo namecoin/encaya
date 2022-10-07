@@ -168,13 +168,24 @@ func (s *Server) Stop() error {
 }
 
 func (s *Server) doRunListenerTCP() {
-	err := http.ListenAndServe(s.cfg.ListenIP+":80", nil)
+	tcpSrv := &http.Server{
+		Addr:         s.cfg.ListenIP + ":80",
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	err := tcpSrv.ListenAndServe()
 	log.Fatale(err)
 }
 
 func (s *Server) doRunListenerTLS() {
-	err := http.ListenAndServeTLS(s.cfg.ListenIP+":443",
-		s.cfg.ListenChain, s.cfg.ListenKey, nil)
+	tlsSrv := &http.Server{
+		Addr:         s.cfg.ListenIP + ":443",
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	err := tlsSrv.ListenAndServeTLS(s.cfg.ListenChain, s.cfg.ListenKey)
 	log.Fatale(err)
 }
 
