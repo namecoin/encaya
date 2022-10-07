@@ -85,12 +85,14 @@ func (cfg *Config) processPaths() {
 	cfg.ListenKey = cfg.cpath(cfg.ListenKey)
 }
 
-func New(cfg *Config) (s *Server, err error) {
-	s = &Server{
+func New(cfg *Config) (*Server, error) {
+	s := &Server{
 		cfg: *cfg,
 	}
 
 	s.cfg.processPaths()
+
+	var err error
 
 	s.rootCertPem, err = os.ReadFile(s.cfg.RootCert)
 	if err != nil {
