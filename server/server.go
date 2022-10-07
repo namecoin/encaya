@@ -92,6 +92,23 @@ func New(cfg *Config) (*Server, error) {
 
 	srv.cfg.processPaths()
 
+	srv.initCerts()
+
+	srv.domainCertCache = map[string][]cachedCert{}
+	srv.negativeCertCache = map[string][]cachedCert{}
+	srv.originalCertCache = map[string][]cachedCert{}
+
+	http.HandleFunc("/", srv.indexHandler)
+	http.HandleFunc("/lookup", srv.lookupHandler)
+	http.HandleFunc("/aia", srv.aiaHandler)
+	http.HandleFunc("/get-new-negative-ca", srv.getNewNegativeCAHandler)
+	http.HandleFunc("/cross-sign-ca", srv.crossSignCAHandler)
+	http.HandleFunc("/original-from-serial", srv.originalFromSerialHandler)
+
+	return srv, nil
+}
+
+func (srv *Server) initCerts() {
 	var err error
 
 	srv.rootCertPem, err = os.ReadFile(srv.cfg.RootCert)
@@ -139,19 +156,6 @@ func New(cfg *Config) (*Server, error) {
 		Bytes: srv.tldCert,
 	})
 	srv.tldCertPemString = string(srv.tldCertPem)
-
-	srv.domainCertCache = map[string][]cachedCert{}
-	srv.negativeCertCache = map[string][]cachedCert{}
-	srv.originalCertCache = map[string][]cachedCert{}
-
-	http.HandleFunc("/", srv.indexHandler)
-	http.HandleFunc("/lookup", srv.lookupHandler)
-	http.HandleFunc("/aia", srv.aiaHandler)
-	http.HandleFunc("/get-new-negative-ca", srv.getNewNegativeCAHandler)
-	http.HandleFunc("/cross-sign-ca", srv.crossSignCAHandler)
-	http.HandleFunc("/original-from-serial", srv.originalFromSerialHandler)
-
-	return srv, nil
 }
 
 func (s *Server) Start() error {
