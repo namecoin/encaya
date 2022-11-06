@@ -28,7 +28,7 @@ import (
 	"github.com/namecoin/safetlsa"
 )
 
-var log, logPublic = xlog.New("ncdns.server")
+var log, logPublic = xlog.New("encaya.server")
 
 var Log = logPublic
 
