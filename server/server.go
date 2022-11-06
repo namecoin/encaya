@@ -366,7 +366,7 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	domain = strings.TrimSuffix(domain, " Domain CA")
+	domain = strings.TrimSuffix(domain, " Domain AIA Parent CA")
 
 	if strings.Contains(domain, " ") {
 		// CommonNames that contain a space are usually CA's.  We
