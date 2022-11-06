@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -58,6 +59,9 @@ type Server struct {
 	negativeCertCacheMutex sync.RWMutex
 	originalCertCache      map[string][]cachedCert
 	originalCertCacheMutex sync.RWMutex
+
+	tcpListener net.Listener
+	tlsListener net.Listener
 }
 
 //nolint:lll
@@ -104,6 +108,26 @@ func New(cfg *Config) (*Server, error) {
 	http.HandleFunc("/get-new-negative-ca", srv.getNewNegativeCAHandler)
 	http.HandleFunc("/cross-sign-ca", srv.crossSignCAHandler)
 	http.HandleFunc("/original-from-serial", srv.originalFromSerialHandler)
+
+	tcpAddr, err := net.ResolveTCPAddr("tcp", srv.cfg.ListenIP+":80")
+	if err != nil {
+		return nil, err
+	}
+
+	srv.tcpListener, err = net.ListenTCP("tcp", tcpAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	tlsAddr, err := net.ResolveTCPAddr("tcp", srv.cfg.ListenIP+":443")
+	if err != nil {
+		return nil, err
+	}
+
+	srv.tlsListener, err = net.ListenTCP("tcp", tlsAddr)
+	if err != nil {
+		return nil, err
+	}
 
 	return srv, nil
 }
@@ -175,23 +199,21 @@ func (s *Server) Stop() error {
 
 func (s *Server) doRunListenerTCP() {
 	tcpSrv := &http.Server{
-		Addr:         s.cfg.ListenIP + ":80",
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 
-	err := tcpSrv.ListenAndServe()
+	err := tcpSrv.Serve(s.tcpListener)
 	log.Fatale(err)
 }
 
 func (s *Server) doRunListenerTLS() {
 	tlsSrv := &http.Server{
-		Addr:         s.cfg.ListenIP + ":443",
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 
-	err := tlsSrv.ListenAndServeTLS(s.cfg.ListenChain, s.cfg.ListenKey)
+	err := tlsSrv.ServeTLS(s.tlsListener, s.cfg.ListenChain, s.cfg.ListenKey)
 	log.Fatale(err)
 }
 
