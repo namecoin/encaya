@@ -358,9 +358,9 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	var err error
 
-	domain := req.FormValue("domain")
+	commonName := req.FormValue("domain")
 
-	if domain == "Namecoin Root CA" {
+	if commonName == "Namecoin Root CA" {
 		_, err = io.WriteString(writer, s.rootCertPemString)
 		if err != nil {
 			log.Debuge(err, "write error")
@@ -369,7 +369,7 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if domain == ".bit TLD CA" {
+	if commonName == ".bit TLD CA" {
 		_, err = io.WriteString(writer, s.tldCertPemString)
 		if err != nil {
 			log.Debuge(err, "write error")
@@ -378,7 +378,7 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	cacheResults, needRefresh := s.getCachedDomainCerts(domain)
+	cacheResults, needRefresh := s.getCachedDomainCerts(commonName)
 	if !needRefresh {
 		_, err = io.WriteString(writer, cacheResults)
 		if err != nil {
@@ -388,7 +388,7 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	domain = strings.TrimSuffix(domain, " Domain AIA Parent CA")
+	domain := strings.TrimSuffix(commonName, " Domain AIA Parent CA")
 
 	if strings.Contains(domain, " ") {
 		// CommonNames that contain a space are usually CA's.  We
@@ -477,8 +477,8 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 			log.Debuge(err, "write error")
 		}
 
-		go s.cacheDomainCert(domain, safeCertPem)
-		go s.popCachedDomainCertLater(domain)
+		go s.cacheDomainCert(commonName, safeCertPem)
+		go s.popCachedDomainCertLater(commonName)
 	}
 }
 
@@ -487,9 +487,9 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 
 	writer.Header().Set("Content-Type", "application/pkix-cert")
 
-	domain := req.FormValue("domain")
+	commonName := req.FormValue("domain")
 
-	if domain == "Namecoin Root CA" {
+	if commonName == "Namecoin Root CA" {
 		_, err = io.WriteString(writer, string(s.rootCert))
 		if err != nil {
 			log.Debuge(err, "write error")
@@ -498,7 +498,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if domain == ".bit TLD CA" {
+	if commonName == ".bit TLD CA" {
 		_, err = io.WriteString(writer, string(s.tldCert))
 		if err != nil {
 			log.Debuge(err, "write error")
@@ -507,7 +507,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	domain = strings.TrimSuffix(domain, " Domain AIA Parent CA")
+	domain := strings.TrimSuffix(commonName, " Domain AIA Parent CA")
 
 	if strings.Contains(domain, " ") {
 		// CommonNames that contain a space are usually CA's.  We
