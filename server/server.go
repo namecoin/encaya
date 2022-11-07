@@ -493,12 +493,16 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 			log.Debuge(err, "write error")
 		}
 
-		go s.cacheDomainCert(commonName, safeCertPem)
-		go s.popCachedDomainCertLater(commonName)
+		// Sometimes an ncp11 query depends on a cache entry from a previous
+		// query, so these cache writes must be done synchronously.
+		s.cacheDomainCert(commonName, safeCertPem)
 
 		// Cache under the TLD CA's CommonName too, since ncp11 queries by
 		// Issuer, not just Subject.
-		go s.cacheDomainCert(".bit TLD CA", safeCertPem)
+		s.cacheDomainCert(".bit TLD CA", safeCertPem)
+
+		go s.popCachedDomainCertLater(commonName)
+
 		go s.popCachedDomainCertLater(".bit TLD CA")
 	}
 }
