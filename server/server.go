@@ -377,6 +377,20 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 			log.Debuge(err, "write error")
 		}
 
+		_, err = io.WriteString(writer, "\n\n")
+		if err != nil {
+			log.Debuge(err, "write error")
+		}
+
+		// Return any certs that the TLD CA has cross-signed too, since ncp11
+		// queries by Issuer, not just Subject.
+		cachedAIACerts, _ := s.getCachedDomainCerts(commonName)
+
+		_, err = io.WriteString(writer, cachedAIACerts)
+		if err != nil {
+			log.Debuge(err, "write error")
+		}
+
 		return
 	}
 
@@ -481,6 +495,11 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 
 		go s.cacheDomainCert(commonName, safeCertPem)
 		go s.popCachedDomainCertLater(commonName)
+
+		// Cache under the TLD CA's CommonName too, since ncp11 queries by
+		// Issuer, not just Subject.
+		go s.cacheDomainCert(".bit TLD CA", safeCertPem)
+		go s.popCachedDomainCertLater(".bit TLD CA")
 	}
 }
 
