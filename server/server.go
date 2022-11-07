@@ -360,6 +360,8 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 
 	commonName := req.FormValue("domain")
 
+	log.Debugf("PEM lookup: %s", commonName)
+
 	if commonName == "Namecoin Root CA" {
 		_, err = io.WriteString(writer, s.rootCertPemString)
 		if err != nil {
@@ -488,6 +490,8 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	writer.Header().Set("Content-Type", "application/pkix-cert")
 
 	commonName := req.FormValue("domain")
+
+	log.Debugf("DER lookup: %s", commonName)
 
 	if commonName == "Namecoin Root CA" {
 		_, err = io.WriteString(writer, string(s.rootCert))
