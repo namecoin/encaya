@@ -223,7 +223,7 @@ func (s *Server) getCachedDomainCerts(commonName string) (string, bool) {
 
 	s.domainCertCacheMutex.RLock()
 	for _, cert := range s.domainCertCache[commonName] {
-		if time.Until(cert.expiration) > 1*time.Minute {
+		if time.Until(cert.expiration) > safetlsa.ValidityShortTerm()/2 {
 			needRefresh = false
 		}
 
@@ -236,7 +236,7 @@ func (s *Server) getCachedDomainCerts(commonName string) (string, bool) {
 
 func (s *Server) cacheDomainCert(commonName, certPem string) {
 	cert := cachedCert{
-		expiration: time.Now().Add(2 * time.Minute),
+		expiration: time.Now().Add(safetlsa.ValidityShortTerm()),
 		certPem:    certPem,
 	}
 
@@ -250,7 +250,7 @@ func (s *Server) cacheDomainCert(commonName, certPem string) {
 }
 
 func (s *Server) popCachedDomainCertLater(commonName string) {
-	time.Sleep(2 * time.Minute)
+	time.Sleep(safetlsa.ValidityShortTerm())
 
 	s.domainCertCacheMutex.Lock()
 	if s.domainCertCache[commonName] != nil {
@@ -284,7 +284,7 @@ func (s *Server) getCachedNegativeCerts(commonName string) (string, bool) {
 
 func (s *Server) cacheNegativeCert(commonName, certPem string) {
 	cert := cachedCert{
-		expiration: time.Now().Add(2 * time.Minute),
+		expiration: time.Now().Add(safetlsa.ValidityShortTerm()),
 		certPem:    certPem,
 	}
 
@@ -318,7 +318,7 @@ func (s *Server) getCachedOriginalFromSerial(serial string) (string, bool) {
 
 func (s *Server) cacheOriginalFromSerial(serial, certPem string) {
 	cert := cachedCert{
-		expiration: time.Now().Add(2 * time.Minute),
+		expiration: time.Now().Add(safetlsa.ValidityShortTerm()),
 		certPem:    certPem,
 	}
 
