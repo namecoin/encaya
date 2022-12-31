@@ -109,6 +109,69 @@ task:
     GO_VERSION: latest
 
 task:
+  name: "Functional Tests $CI_DISTRO Go $GO_VERSION"
+  alias: "Functional Tests"
+  matrix:
+    - compute_engine_instance:
+        image_project: debian-cloud
+        image: family/debian-11
+        platform: linux
+        cpu: 1
+        memory: 1G
+      env:
+        CI_DISTRO: debian
+  bitcoind_cache:
+    folder: /tmp/bitcoind
+    populate_script: mkdir -p /tmp/bitcoind
+  install_script:
+    - apt-get update
+    # bind9-dnsutils contains dig
+    - apt-get install -y dnssec-trigger bind9-dnsutils
+    # Namecoin Core
+    - BITCOIND_URL=$(curl https://www.namecoin.org/download/ | grep x86_64-linux-gnu.tar.gz | grep -v 0.13.99 | grep --only-matching https://.*.tar.gz)
+    - BITCOIND_FILENAME=$(echo $BITCOIND_URL | grep -E --only-matching 'namecoin-nc.*.tar.gz')
+    - BITCOIND_PATH=/tmp/bitcoind/$BITCOIND_FILENAME
+    - tar -xaf $BITCOIND_PATH || (rm -f /tmp/bitcoind/* && curl --output $BITCOIND_PATH $BITCOIND_URL && tar -xaf $BITCOIND_PATH)
+    - cp -a namecoin-*/* /usr/
+    # ncdns
+    - NCDNS_URL=https://api.cirrus-ci.com/v1/artifact/github/namecoin/ncdns/Cross-Compile%20Go%20latest/binaries/dist/ncdns--linux_amd64.tar.gz
+    - curl -o ncdns.tar.gz $NCDNS_URL
+    - tar -xaf ncdns.tar.gz
+    - cp -a ncdns--*/* /usr/
+    # Encaya
+    - ENCAYA_URL=https://api.cirrus-ci.com/v1/artifact/build/$CIRRUS_BUILD_ID/Cross-Compile%20Go%20latest/binaries/dist/encaya--linux_amd64.tar.gz
+    - curl -o encaya.tar.gz $ENCAYA_URL
+    - tar -xaf encaya.tar.gz
+    - cp -a encaya--*/* /usr/
+    # Configure DNSSEC-Trigger
+    - cp ncdns--*/doc/unbound.conf.d/ncdns.conf ncdns--*/doc/unbound.conf.d/ncdns-insecure.conf /etc/unbound/unbound.conf.d
+    - systemctl restart unbound
+  bitcoind_service_background_script:
+    - testdata/run_bitcoind.sh
+  ncdns_service_background_script:
+    # ncdns refuses to run as root
+    - adduser ncdns --disabled-password
+    - ncdns -conf testdata/ncdns.conf
+  encaya_service_background_script:
+    # Avoid race condition in "adduser" between ncdns and encaya
+    - sleep 5s
+    # encaya refuses to run as root
+    - adduser encaya --disabled-password
+    - encayagen -conf "$(pwd)/testdata/encaya.conf"
+    - chown encaya:encaya testdata/*.pem
+    # Curiously, relative paths don't work here, they cause the .pem files to
+    # not be detected.  Maybe file a bug with Hugo?
+    - encaya -conf "$(pwd)/testdata/encaya.conf"
+  regtest_script:
+    - sleep 15s
+    - testdata/regtest.sh
+  depends_on:
+    - "Cross-Compile Go $GO_VERSION"
+  env:
+    GO_VERSION: latest
+    MODULES_NAME: ""
+
+task:
   name: Cross-Compile Go $GO_VERSION
   alias: Cross-Compile
   container:
