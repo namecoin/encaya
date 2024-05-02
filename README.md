@@ -23,25 +23,21 @@ Option A: Using Go build commands without Go modules (works on any platform with
 3. Run `go get -d -t -u github.com/namecoin/encaya/...`. The encaya source code will be
    retrieved automatically.
 
-4. Run `go generate github.com/namecoin/x509-compressed/...`.  The compressed public key patch will be applied.
-
-5. Run `go get -t -u github.com/namecoin/encaya/...`.  encaya will be built. The binaries will be at `$GOPATH/bin/encaya`.
+4. Run `go get -t -u github.com/namecoin/encaya/...`.  encaya will be built. The binaries will be at `$GOPATH/bin/encaya`.
 
 Option B: Using Go build commands with Go modules (works on any platform with Bash; Go 1.15+:
 
-1. Clone [x509-compressed](https://github.com/namecoin/x509-compressed) and encaya to sibling directories.
+1. Clone encaya.
 
-2. Install `x509-compressed` according to its "with Go modules" instructions.
-
-3. Run the following in the encaya directory to set up Go modules:
+2. Run the following in the encaya directory to set up Go modules:
    
    ~~~
    go mod init github.com/namecoin/encaya
-   go mod edit -replace github.com/coreos/go-systemd=github.com/coreos/go-systemd/v22@latest -replace github.com/namecoin/x509-compressed=../x509-compressed
+   go mod edit -replace github.com/coreos/go-systemd=github.com/coreos/go-systemd/v22@latest
    go mod tidy
    ~~~
 
-4. Run `go install ./...`.  encaya will be built. The binaries will be at `$GOPATH/bin/encaya`.
+3. Run `go install ./...`.  encaya will be built. The binaries will be at `$GOPATH/bin/encaya`.
 
 Option C: Using Makefile (non-Windows platforms):
 
