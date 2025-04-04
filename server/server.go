@@ -358,6 +358,8 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	var err error
 
+	writer.Header().Set("Content-Type", "application/x-pem-file")
+
 	commonName := req.FormValue("domain")
 
 	log.Debugf("PEM lookup: %s", commonName)
