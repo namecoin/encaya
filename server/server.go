@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -35,7 +36,7 @@ var Log = logPublic
 
 type cachedCert struct {
 	expiration time.Time
-	certPem    string
+	certDer    []byte
 }
 
 type Server struct {
@@ -217,9 +218,9 @@ func (s *Server) doRunListenerTLS() {
 	log.Fatale(err)
 }
 
-func (s *Server) getCachedDomainCerts(commonName string) (string, bool) {
+func (s *Server) getCachedDomainCerts(commonName string) ([][]byte, bool) {
 	needRefresh := true
-	results := ""
+	results := [][]byte{}
 
 	s.domainCertCacheMutex.RLock()
 	for _, cert := range s.domainCertCache[commonName] {
@@ -227,17 +228,17 @@ func (s *Server) getCachedDomainCerts(commonName string) (string, bool) {
 			needRefresh = false
 		}
 
-		results = results + cert.certPem + "\n\n"
+		results = append(results, cert.certDer)
 	}
 	s.domainCertCacheMutex.RUnlock()
 
 	return results, needRefresh
 }
 
-func (s *Server) cacheDomainCert(commonName, certPem string) {
+func (s *Server) cacheDomainCert(commonName string, certDer []byte) {
 	cert := cachedCert{
 		expiration: time.Now().Add(safetlsa.ValidityShortTerm()),
-		certPem:    certPem,
+		certDer:    certDer,
 	}
 
 	s.domainCertCacheMutex.Lock()
@@ -263,16 +264,16 @@ func (s *Server) popCachedDomainCertLater(commonName string) {
 	s.domainCertCacheMutex.Unlock()
 }
 
-func (s *Server) getCachedNegativeCerts(commonName string) (string, bool) {
+func (s *Server) getCachedNegativeCerts(commonName string) ([][]byte, bool) {
 	needRefresh := true
-	results := ""
+	results := [][]byte{}
 
 	s.negativeCertCacheMutex.RLock()
 	for _, cert := range s.negativeCertCache[commonName] {
 		// Negative certs don't expire
 		needRefresh = false
 
-		results = results + cert.certPem + "\n\n"
+		results = append(results, cert.certDer)
 
 		// We only need 1 negative cert
 		break
@@ -282,10 +283,10 @@ func (s *Server) getCachedNegativeCerts(commonName string) (string, bool) {
 	return results, needRefresh
 }
 
-func (s *Server) cacheNegativeCert(commonName, certPem string) {
+func (s *Server) cacheNegativeCert(commonName string, certDer []byte) {
 	cert := cachedCert{
 		expiration: time.Now().Add(safetlsa.ValidityShortTerm()),
-		certPem:    certPem,
+		certDer:    certDer,
 	}
 
 	s.negativeCertCacheMutex.Lock()
@@ -297,16 +298,16 @@ func (s *Server) cacheNegativeCert(commonName, certPem string) {
 	s.negativeCertCacheMutex.Unlock()
 }
 
-func (s *Server) getCachedOriginalFromSerial(serial string) (string, bool) {
+func (s *Server) getCachedOriginalFromSerial(serial string) ([][]byte, bool) {
 	needRefresh := true
-	results := ""
+	results := [][]byte{}
 
 	s.originalCertCacheMutex.RLock()
 	for _, cert := range s.originalCertCache[serial] {
 		// Original certs don't expire
 		needRefresh = false
 
-		results = results + cert.certPem + "\n\n"
+		results = append(results, cert.certDer)
 
 		// We only need 1 original cert
 		break
@@ -316,10 +317,10 @@ func (s *Server) getCachedOriginalFromSerial(serial string) (string, bool) {
 	return results, needRefresh
 }
 
-func (s *Server) cacheOriginalFromSerial(serial, certPem string) {
+func (s *Server) cacheOriginalFromSerial(serial string, certDer []byte) {
 	cert := cachedCert{
 		expiration: time.Now().Add(safetlsa.ValidityShortTerm()),
-		certPem:    certPem,
+		certDer:    certDer,
 	}
 
 	s.originalCertCacheMutex.Lock()
@@ -355,55 +356,15 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
-	var err error
-
-	writer.Header().Set("Content-Type", "application/x-pem-file")
-
+func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, err error) {
 	commonName := req.FormValue("domain")
 
-	log.Debugf("PEM lookup: %s", commonName)
-
 	if commonName == "Namecoin Root CA" {
-		_, err = io.WriteString(writer, s.rootCertPemString)
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
-
-		return
+		return s.rootCert, false, nil
 	}
 
 	if commonName == ".bit TLD CA" {
-		_, err = io.WriteString(writer, s.tldCertPemString)
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
-
-		_, err = io.WriteString(writer, "\n\n")
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
-
-		// Return any certs that the TLD CA has cross-signed too, since ncp11
-		// queries by Issuer, not just Subject.
-		cachedAIACerts, _ := s.getCachedDomainCerts(commonName)
-
-		_, err = io.WriteString(writer, cachedAIACerts)
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
-
-		return
-	}
-
-	cacheResults, needRefresh := s.getCachedDomainCerts(commonName)
-	if !needRefresh {
-		_, err = io.WriteString(writer, cacheResults)
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
-
-		return
+		return s.tldCert, false, nil
 	}
 
 	domain := strings.TrimSuffix(commonName, " Domain AIA Parent CA")
@@ -411,8 +372,8 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	if strings.Contains(domain, " ") {
 		// CommonNames that contain a space are usually CA's.  We
 		// already stripped the suffixes of Namecoin-formatted CA's, so
-		// if a space remains, just return.
-		return
+		// if a space remains, just return no cert.
+		return nil, false, nil
 	}
 
 	qparams := qlib.DefaultParams()
@@ -435,31 +396,25 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		writer.WriteHeader(http.StatusInternalServerError)
-
-		return
+		return nil, false, fmt.Errorf("qlib error: %w", err)
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		writer.WriteHeader(http.StatusInternalServerError)
-
-		return
+		return nil, false, fmt.Errorf("qlib error: nil response")
 	}
 
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		writer.WriteHeader(http.StatusInternalServerError)
-
-		return
+		return nil, false, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
 	}
 
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
-		// Return an empty cert list
-		return
+		// Return no cert.
+		return nil, false, nil
 	}
 
 	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
@@ -467,144 +422,8 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 		// authenticated (e.g. server is Unbound and has verified
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
 		// the owner of the requested zone).  If neither is the case,
-		// then return an empty cert list.
-		return
-	}
-
-	for _, rr := range dnsResponse.Answer {
-		tlsa, ok := rr.(*dns.TLSA)
-		if !ok {
-			// Record isn't a TLSA record
-			continue
-		}
-
-		safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, s.tldCert, s.tldPriv)
-		if err != nil {
-			continue
-		}
-
-		safeCertPemBytes := pem.EncodeToMemory(&pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: safeCert,
-		})
-
-		safeCertPem := string(safeCertPemBytes)
-
-		_, err = io.WriteString(writer, cacheResults+"\n\n"+safeCertPem)
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
-
-		// Sometimes an ncp11 query depends on a cache entry from a previous
-		// query, so these cache writes must be done synchronously.
-		s.cacheDomainCert(commonName, safeCertPem)
-
-		// Cache under the TLD CA's CommonName too, since ncp11 queries by
-		// Issuer, not just Subject.
-		s.cacheDomainCert(".bit TLD CA", safeCertPem)
-
-		go s.popCachedDomainCertLater(commonName)
-
-		go s.popCachedDomainCertLater(".bit TLD CA")
-	}
-}
-
-func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
-	var err error
-
-	writer.Header().Set("Content-Type", "application/pkix-cert")
-
-	commonName := req.FormValue("domain")
-
-	log.Debugf("DER lookup: %s", commonName)
-
-	if commonName == "Namecoin Root CA" {
-		_, err = io.WriteString(writer, string(s.rootCert))
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
-
-		return
-	}
-
-	if commonName == ".bit TLD CA" {
-		_, err = io.WriteString(writer, string(s.tldCert))
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
-
-		return
-	}
-
-	domain := strings.TrimSuffix(commonName, " Domain AIA Parent CA")
-
-	if strings.Contains(domain, " ") {
-		// CommonNames that contain a space are usually CA's.  We
-		// already stripped the suffixes of Namecoin-formatted CA's, so
-		// if a space remains, just return.
-		writer.WriteHeader(http.StatusNotFound)
-
-		return
-	}
-
-	qparams := qlib.DefaultParams()
-	qparams.Port = s.cfg.DNSPort
-	qparams.Ad = true
-	qparams.Fallback = true
-	qparams.Tcp = true // Workaround for https://github.com/miekg/exdns/issues/19
-
-	args := []string{}
-	// Set the custom DNS server if requested
-	if s.cfg.DNSAddress != "" {
-		args = append(args, "@"+s.cfg.DNSAddress)
-	}
-	// Set qtype to TLSA
-	args = append(args, "TLSA")
-	// Set qname to all protocols and all ports of requested hostname
-	args = append(args, "*."+domain)
-
-	result, err := qparams.Do(args)
-	if err != nil {
-		// A DNS error occurred.
-		log.Debuge(err, "qlib error")
-		writer.WriteHeader(http.StatusInternalServerError)
-
-		return
-	}
-
-	if result.ResponseMsg == nil {
-		// A DNS error occurred (nil response).
-		writer.WriteHeader(http.StatusInternalServerError)
-
-		return
-	}
-
-	dnsResponse := result.ResponseMsg
-	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
-		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		writer.WriteHeader(http.StatusInternalServerError)
-
-		return
-	}
-
-	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
-		// Wildcard subdomain doesn't exist.
-		// That means the domain doesn't use Namecoin-form DANE.
-		// Return an empty cert list
-		writer.WriteHeader(http.StatusNotFound)
-
-		return
-	}
-
-	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
-		// For security reasons, we only trust records that are
-		// authenticated (e.g. server is Unbound and has verified
-		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
-		// the owner of the requested zone).  If neither is the case,
-		// then return an empty cert list.
-		writer.WriteHeader(http.StatusNotFound)
-
-		return
+		// then return no cert.
+		return nil, false, nil
 	}
 
 	pubSHA256Hex := req.FormValue("pubsha256")
@@ -612,16 +431,8 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
-		writer.WriteHeader(http.StatusNotFound)
-
-		return
+		return nil, false, nil
 	}
-
-	// Set short-term caching duration of half the cert validity
-	maxAge := safetlsa.ValidityShortTerm() / 2
-	maxAgeSeconds := int(maxAge / time.Second)
-	maxAgeStr := strconv.Itoa(maxAgeSeconds)
-	writer.Header().Set("Cache-Control", "max-age="+maxAgeStr)
 
 	for _, rr := range dnsResponse.Answer {
 		tlsa, ok := rr.(*dns.TLSA)
@@ -639,7 +450,10 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 			}
 
 			tlsaPubSHA256 := sha256.Sum256(tlsaPubBytes)
-			if !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
+			// TODO: Special-case empty stapled pubkey. We should remove this
+			// special-case once stapled pubkeys are used everywhere.
+			//if !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
+			if len(pubSHA256) > 0 && !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
 				// TLSA record doesn't match requested public key hash
 				continue
 			}
@@ -654,17 +468,109 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 		}
 
 		// Success.  Send the cert as a response.
-		_, err = io.WriteString(writer, string(safeCert))
+		return safeCert, true, nil
+	}
+
+	// No DNS records matched. Return no cert.
+	return nil, false, nil
+}
+
+func (s *Server) writePemBundle(writer http.ResponseWriter, certs [][]byte) {
+	for _, cert := range certs {
+		certPemBytes := pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: cert,
+		})
+
+		certPem := string(certPemBytes)
+
+		_, err := io.WriteString(writer, certPem + "\n\n")
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
+	}
+}
 
-		// Only send 1 cert in the response.
+func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
+	writer.Header().Set("Content-Type", "application/x-pem-file")
+
+	commonName := req.FormValue("domain")
+
+	log.Debugf("PEM lookup: %s", commonName)
+
+	resultCerts := [][]byte{}
+
+	cachedCerts, needRefresh := s.getCachedDomainCerts(commonName)
+	if needRefresh {
+		requestedCert, _, err := s.lookupCert(req)
+		if err != nil {
+			log.Debuge(err, "cert lookup error")
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if requestedCert != nil {
+			resultCerts = append(resultCerts, requestedCert)
+
+			// Sometimes an ncp11 query depends on a cache entry from a previous
+			// query, so these cache writes must be done synchronously (not on a
+			// goroutine).
+			s.cacheDomainCert(commonName, requestedCert)
+
+			if commonName != "Namecoin Root CA" && commonName != ".bit TLD CA" {
+				// Cache Domain AIA Parent CA under the TLD CA's CommonName too, since
+				// ncp11 queries by Issuer, not just Subject.
+				s.cacheDomainCert(".bit TLD CA", requestedCert)
+			}
+		}
+	}
+
+	resultCerts = append(resultCerts, cachedCerts...)
+
+	if commonName == "Namecoin Root CA" {
+		// Return the TLD CA too, since ncp11 queries by Issuer, not just
+		// Subject.
+		resultCerts = append(resultCerts, s.tldCert)
+	}
+
+	go s.popCachedDomainCertLater(commonName)
+	go s.popCachedDomainCertLater(".bit TLD CA")
+
+	s.writePemBundle(writer, resultCerts)
+}
+
+func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
+	writer.Header().Set("Content-Type", "application/pkix-cert")
+
+	commonName := req.FormValue("domain")
+
+	log.Debugf("DER lookup: %s", commonName)
+
+	requestedCert, shortTerm, err := s.lookupCert(req)
+	if err != nil {
+		log.Debuge(err, "cert lookup error")
+		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	// Requested public key hash doesn't match the DNS response.
-	writer.WriteHeader(http.StatusNotFound)
+	if requestedCert == nil {
+		// Cert not found.
+		writer.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if shortTerm {
+		// Set short-term caching duration of half the cert validity
+		maxAge := safetlsa.ValidityShortTerm() / 2
+		maxAgeSeconds := int(maxAge / time.Second)
+		maxAgeStr := strconv.Itoa(maxAgeSeconds)
+		writer.Header().Set("Cache-Control", "max-age="+maxAgeStr)
+	}
+
+	_, err = io.WriteString(writer, string(requestedCert))
+	if err != nil {
+		log.Debuge(err, "write error")
+	}
 }
 
 func (s *Server) getNewNegativeCAHandler(writer http.ResponseWriter, req *http.Request) {
@@ -718,10 +624,7 @@ func (s *Server) crossSignCAHandler(writer http.ResponseWriter, req *http.Reques
 
 	cacheResults, needRefresh := s.getCachedNegativeCerts(cacheKey)
 	if !needRefresh {
-		_, err = io.WriteString(writer, cacheResults)
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
+		s.writePemBundle(writer, cacheResults)
 
 		return
 	}
@@ -760,8 +663,8 @@ func (s *Server) crossSignCAHandler(writer http.ResponseWriter, req *http.Reques
 		log.Debuge(err, "write error")
 	}
 
-	s.cacheNegativeCert(cacheKey, resultPEMString)
-	s.cacheOriginalFromSerial(resultParsed.SerialNumber.String(), toSignPEM)
+	s.cacheNegativeCert(cacheKey, resultBytes)
+	s.cacheOriginalFromSerial(resultParsed.SerialNumber.String(), toSignBlock.Bytes)
 }
 
 func (s *Server) originalFromSerialHandler(writer http.ResponseWriter, req *http.Request) {
@@ -769,10 +672,7 @@ func (s *Server) originalFromSerialHandler(writer http.ResponseWriter, req *http
 
 	cacheResults, needRefresh := s.getCachedOriginalFromSerial(serial)
 	if !needRefresh {
-		_, err := io.WriteString(writer, cacheResults)
-		if err != nil {
-			log.Debuge(err, "write error")
-		}
+		s.writePemBundle(writer, cacheResults)
 	}
 }
 
