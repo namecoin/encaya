@@ -23,7 +23,7 @@ func (s *Server) lookupPi(req *http.Request, domain string) (tlsa *dns.TLSA, err
 
 	digitCountStr := strings.TrimSuffix(domain, metaSuffix)
 
-	digitCount, err := strconv.Atoi(digitCountStr)
+	digitCount, err := strconv.ParseInt(digitCountStr, 10, 0)
 	if err != nil {
 		return nil, nil
 	}
