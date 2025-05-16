@@ -4,6 +4,7 @@
 package server
 
 import (
+	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/hex"
 	"net/http"
@@ -40,7 +41,7 @@ func (s *Server) lookupPi(req *http.Request, domain string) (tlsa *dns.TLSA, err
 	// key, because using a separate key would be more effort and this is just
 	// a debug thing.
 
-	pub := &s.tldPriv.PublicKey
+	pub := &s.tldPriv.(*ecdsa.PrivateKey).PublicKey
 
 	pubBytes, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {
