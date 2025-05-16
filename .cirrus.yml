@@ -197,6 +197,11 @@ task:
         - go mod init
         - go mod edit -replace gopkg.in/alecthomas/kingpin.v2=$(go env GOPATH)/src/github.com/alecthomas/kingpin
         - go mod tidy
+  matrix:
+    - env:
+        GOX_TAGS: ""
+    - env:
+        GOX_TAGS: "encaya_pi"
   build_script:
     - rm -rf idist
     - cd $(go env GOPATH)/src/github.com/"$CIRRUS_REPO_FULL_NAME"
@@ -208,7 +213,6 @@ task:
   binaries_artifacts:
     path: "dist/*"
   env:
-    GOX_TAGS: ""
     GO_VERSION: latest
 
 task:
