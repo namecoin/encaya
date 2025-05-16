@@ -476,7 +476,7 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 	}
 
 	if tlsa == nil {
-		tlsa, err := s.lookupDNS(req, domain)
+		tlsa, err = s.lookupDNS(req, domain)
 		if err != nil {
 			return nil, false, err
 		}
