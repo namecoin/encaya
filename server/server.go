@@ -356,26 +356,7 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, err error) {
-	commonName := req.FormValue("domain")
-
-	if commonName == "Namecoin Root CA" {
-		return s.rootCert, false, nil
-	}
-
-	if commonName == ".bit TLD CA" {
-		return s.tldCert, false, nil
-	}
-
-	domain := strings.TrimSuffix(commonName, " Domain AIA Parent CA")
-
-	if strings.Contains(domain, " ") {
-		// CommonNames that contain a space are usually CA's.  We
-		// already stripped the suffixes of Namecoin-formatted CA's, so
-		// if a space remains, just return no cert.
-		return nil, false, nil
-	}
-
+func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
 	qparams := qlib.DefaultParams()
 	qparams.Port = s.cfg.DNSPort
 	qparams.Ad = true
@@ -396,25 +377,25 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		return nil, false, fmt.Errorf("qlib error: %w", err)
+		return nil, fmt.Errorf("qlib error: %w", err)
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		return nil, false, fmt.Errorf("qlib error: nil response")
+		return nil, fmt.Errorf("qlib error: nil response")
 	}
 
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		return nil, false, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
+		return nil, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
 	}
 
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return no cert.
-		return nil, false, nil
+		return nil, nil
 	}
 
 	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
@@ -423,7 +404,7 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
 		// the owner of the requested zone).  If neither is the case,
 		// then return no cert.
-		return nil, false, nil
+		return nil, nil
 	}
 
 	pubSHA256Hex := req.FormValue("pubsha256")
@@ -431,7 +412,7 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
-		return nil, false, nil
+		return nil, nil
 	}
 
 	for _, rr := range dnsResponse.Answer {
@@ -462,17 +443,49 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 			continue
 		}
 
-		safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, s.tldCert, s.tldPriv)
-		if err != nil {
-			continue
-		}
-
-		// Success.  Send the cert as a response.
-		return safeCert, true, nil
+		return tlsa, nil
 	}
 
 	// No DNS records matched. Return no cert.
-	return nil, false, nil
+	return nil, nil
+}
+
+func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, err error) {
+	commonName := req.FormValue("domain")
+
+	if commonName == "Namecoin Root CA" {
+		return s.rootCert, false, nil
+	}
+
+	if commonName == ".bit TLD CA" {
+		return s.tldCert, false, nil
+	}
+
+	domain := strings.TrimSuffix(commonName, " Domain AIA Parent CA")
+
+	if strings.Contains(domain, " ") {
+		// CommonNames that contain a space are usually CA's.  We
+		// already stripped the suffixes of Namecoin-formatted CA's, so
+		// if a space remains, just return no cert.
+		return nil, false, nil
+	}
+
+	tlsa, err := s.lookupDNS(req, domain)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if tlsa == nil {
+		return nil, false, nil
+	}
+
+	safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, s.tldCert, s.tldPriv)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Success.  Send the cert as a response.
+	return safeCert, true, nil
 }
 
 func (s *Server) writePemBundle(writer http.ResponseWriter, certs [][]byte) {
