@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -432,28 +433,60 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 			continue
 		}
 
-		// CA not in user's trust store; public key; not hashed
-		if tlsa.Usage == 2 && tlsa.Selector == 1 && tlsa.MatchingType == 0 {
-			tlsaPubBytes, err := hex.DecodeString(tlsa.Certificate)
-			if err != nil {
-				// TLSA record is malformed
-				continue
-			}
+		// CA not in user's trust store; public key; unspecified hash
+		if tlsa.Usage == 2 && tlsa.Selector == 1 {
+			if tlsa.MatchingType == 0 { // Not hashed
+				tlsaPubBytes, err := hex.DecodeString(tlsa.Certificate)
+				if err != nil {
+					// TLSA record is malformed
+					continue
+				}
 
-			// TODO: Special-case empty stapled pubkey. We should remove this
-			// special-case once stapled pubkeys are used everywhere.
-			if len(pubBytes) > 0 && !bytes.Equal(pubBytes, tlsaPubBytes) {
-				// TLSA record doesn't match requested public key preimage
-				continue
-			}
+				// TODO: Special-case empty stapled pubkey. We should remove this
+				// special-case once stapled pubkeys are used everywhere.
+				if len(pubBytes) > 0 && !bytes.Equal(pubBytes, tlsaPubBytes) {
+					// TLSA record doesn't match requested public key preimage
+					continue
+				}
 
-			tlsaPubSHA256 := sha256.Sum256(tlsaPubBytes)
-			// TODO: Special-case empty stapled pubkey. We should remove this
-			// special-case once stapled pubkeys are used everywhere.
-			//if !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
-			if len(pubSHA256) > 0 && !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
-				// TLSA record doesn't match requested public key hash
-				continue
+				tlsaPubSHA256 := sha256.Sum256(tlsaPubBytes)
+				// TODO: Special-case empty stapled pubkey. We should remove this
+				// special-case once stapled pubkeys are used everywhere.
+				//if !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
+				if len(pubSHA256) > 0 && !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
+					// TLSA record doesn't match requested public key hash
+					continue
+				}
+			} else if tlsa.MatchingType == 1 { // SHA-256
+				tlsaPubSHA256, err := hex.DecodeString(tlsa.Certificate)
+				if err != nil {
+					// TLSA record is malformed
+					continue
+				}
+
+				pubBytesSHA256 := sha256.Sum256(pubBytes)
+				if !bytes.Equal(pubBytesSHA256[:], tlsaPubSHA256) {
+					continue
+				}
+
+				// Fill in verified preimage into TLSA record
+				tlsa.MatchingType = 0
+				tlsa.Certificate = hex.EncodeToString(pubBytes)
+			} else if tlsa.MatchingType == 2 { // SHA-512
+				tlsaPubSHA512, err := hex.DecodeString(tlsa.Certificate)
+				if err != nil {
+					// TLSA record is malformed
+					continue
+				}
+
+				pubBytesSHA512 := sha512.Sum512(pubBytes)
+				if !bytes.Equal(pubBytesSHA512[:], tlsaPubSHA512) {
+					continue
+				}
+
+				// Fill in verified preimage into TLSA record
+				tlsa.MatchingType = 0
+				tlsa.Certificate = hex.EncodeToString(pubBytes)
 			}
 		} else {
 			// TLSA record isn't in the Namecoin CA form
