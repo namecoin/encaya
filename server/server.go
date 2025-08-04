@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
@@ -415,6 +416,15 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		return nil, nil
 	}
 
+	pubBase64 := req.FormValue("pubb64")
+
+	// We use RawURLEncoding because it results in compact, readable URL's.
+	pubBytes, err := base64.RawURLEncoding.DecodeString(pubBase64)
+	if err != nil {
+		// Requested public key is malformed.
+		return nil, nil
+	}
+
 	for _, rr := range dnsResponse.Answer {
 		tlsa, ok := rr.(*dns.TLSA)
 		if !ok {
@@ -427,6 +437,13 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 			tlsaPubBytes, err := hex.DecodeString(tlsa.Certificate)
 			if err != nil {
 				// TLSA record is malformed
+				continue
+			}
+
+			// TODO: Special-case empty stapled pubkey. We should remove this
+			// special-case once stapled pubkeys are used everywhere.
+			if len(pubBytes) > 0 && !bytes.Equal(pubBytes, tlsaPubBytes) {
+				// TLSA record doesn't match requested public key preimage
 				continue
 			}
 
