@@ -470,9 +470,16 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 		return nil, false, nil
 	}
 
-	tlsa, err := s.lookupDNS(req, domain)
+	tlsa, err := s.lookupPi(req, domain)
 	if err != nil {
 		return nil, false, err
+	}
+
+	if tlsa == nil {
+		tlsa, err = s.lookupDNS(req, domain)
+		if err != nil {
+			return nil, false, err
+		}
 	}
 
 	if tlsa == nil {
