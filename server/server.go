@@ -6,8 +6,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
@@ -356,26 +358,7 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, err error) {
-	commonName := req.FormValue("domain")
-
-	if commonName == "Namecoin Root CA" {
-		return s.rootCert, false, nil
-	}
-
-	if commonName == ".bit TLD CA" {
-		return s.tldCert, false, nil
-	}
-
-	domain := strings.TrimSuffix(commonName, " Domain AIA Parent CA")
-
-	if strings.Contains(domain, " ") {
-		// CommonNames that contain a space are usually CA's.  We
-		// already stripped the suffixes of Namecoin-formatted CA's, so
-		// if a space remains, just return no cert.
-		return nil, false, nil
-	}
-
+func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
 	qparams := qlib.DefaultParams()
 	qparams.Port = s.cfg.DNSPort
 	qparams.Ad = true
@@ -396,25 +379,25 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 	if err != nil {
 		// A DNS error occurred.
 		log.Debuge(err, "qlib error")
-		return nil, false, fmt.Errorf("qlib error: %w", err)
+		return nil, fmt.Errorf("qlib error: %w", err)
 	}
 
 	if result.ResponseMsg == nil {
 		// A DNS error occurred (nil response).
-		return nil, false, fmt.Errorf("qlib error: nil response")
+		return nil, fmt.Errorf("qlib error: nil response")
 	}
 
 	dnsResponse := result.ResponseMsg
 	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		return nil, false, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
+		return nil, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
 	}
 
 	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return no cert.
-		return nil, false, nil
+		return nil, nil
 	}
 
 	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
@@ -423,7 +406,7 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
 		// the owner of the requested zone).  If neither is the case,
 		// then return no cert.
-		return nil, false, nil
+		return nil, nil
 	}
 
 	pubSHA256Hex := req.FormValue("pubsha256")
@@ -431,7 +414,16 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
-		return nil, false, nil
+		return nil, nil
+	}
+
+	pubBase64 := req.FormValue("pubb64")
+
+	// We use RawURLEncoding because it results in compact, readable URL's.
+	pubBytes, err := base64.RawURLEncoding.DecodeString(pubBase64)
+	if err != nil {
+		// Requested public key is malformed.
+		return nil, nil
 	}
 
 	for _, rr := range dnsResponse.Answer {
@@ -441,38 +433,116 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 			continue
 		}
 
-		// CA not in user's trust store; public key; not hashed
-		if tlsa.Usage == 2 && tlsa.Selector == 1 && tlsa.MatchingType == 0 {
-			tlsaPubBytes, err := hex.DecodeString(tlsa.Certificate)
-			if err != nil {
-				// TLSA record is malformed
-				continue
-			}
+		// CA not in user's trust store; public key; unspecified hash
+		if tlsa.Usage == 2 && tlsa.Selector == 1 {
+			if tlsa.MatchingType == 0 { // Not hashed
+				tlsaPubBytes, err := hex.DecodeString(tlsa.Certificate)
+				if err != nil {
+					// TLSA record is malformed
+					continue
+				}
 
-			tlsaPubSHA256 := sha256.Sum256(tlsaPubBytes)
-			// TODO: Special-case empty stapled pubkey. We should remove this
-			// special-case once stapled pubkeys are used everywhere.
-			//if !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
-			if len(pubSHA256) > 0 && !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
-				// TLSA record doesn't match requested public key hash
-				continue
+				// TODO: Special-case empty stapled pubkey. We should remove this
+				// special-case once stapled pubkeys are used everywhere.
+				if len(pubBytes) > 0 && !bytes.Equal(pubBytes, tlsaPubBytes) {
+					// TLSA record doesn't match requested public key preimage
+					continue
+				}
+
+				tlsaPubSHA256 := sha256.Sum256(tlsaPubBytes)
+				// TODO: Special-case empty stapled pubkey. We should remove this
+				// special-case once stapled pubkeys are used everywhere.
+				//if !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
+				if len(pubSHA256) > 0 && !bytes.Equal(pubSHA256, tlsaPubSHA256[:]) {
+					// TLSA record doesn't match requested public key hash
+					continue
+				}
+			} else if tlsa.MatchingType == 1 { // SHA-256
+				tlsaPubSHA256, err := hex.DecodeString(tlsa.Certificate)
+				if err != nil {
+					// TLSA record is malformed
+					continue
+				}
+
+				pubBytesSHA256 := sha256.Sum256(pubBytes)
+				if !bytes.Equal(pubBytesSHA256[:], tlsaPubSHA256) {
+					continue
+				}
+
+				// Fill in verified preimage into TLSA record
+				tlsa.MatchingType = 0
+				tlsa.Certificate = hex.EncodeToString(pubBytes)
+			} else if tlsa.MatchingType == 2 { // SHA-512
+				tlsaPubSHA512, err := hex.DecodeString(tlsa.Certificate)
+				if err != nil {
+					// TLSA record is malformed
+					continue
+				}
+
+				pubBytesSHA512 := sha512.Sum512(pubBytes)
+				if !bytes.Equal(pubBytesSHA512[:], tlsaPubSHA512) {
+					continue
+				}
+
+				// Fill in verified preimage into TLSA record
+				tlsa.MatchingType = 0
+				tlsa.Certificate = hex.EncodeToString(pubBytes)
 			}
 		} else {
 			// TLSA record isn't in the Namecoin CA form
 			continue
 		}
 
-		safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, s.tldCert, s.tldPriv)
-		if err != nil {
-			continue
-		}
-
-		// Success.  Send the cert as a response.
-		return safeCert, true, nil
+		return tlsa, nil
 	}
 
 	// No DNS records matched. Return no cert.
-	return nil, false, nil
+	return nil, nil
+}
+
+func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, err error) {
+	commonName := req.FormValue("domain")
+
+	if commonName == "Namecoin Root CA" {
+		return s.rootCert, false, nil
+	}
+
+	if commonName == ".bit TLD CA" {
+		return s.tldCert, false, nil
+	}
+
+	domain := strings.TrimSuffix(commonName, " Domain AIA Parent CA")
+
+	if strings.Contains(domain, " ") {
+		// CommonNames that contain a space are usually CA's.  We
+		// already stripped the suffixes of Namecoin-formatted CA's, so
+		// if a space remains, just return no cert.
+		return nil, false, nil
+	}
+
+	tlsa, err := s.lookupPi(req, domain)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if tlsa == nil {
+		tlsa, err = s.lookupDNS(req, domain)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+
+	if tlsa == nil {
+		return nil, false, nil
+	}
+
+	safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, s.tldCert, s.tldPriv)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Success.  Send the cert as a response.
+	return safeCert, true, nil
 }
 
 func (s *Server) writePemBundle(writer http.ResponseWriter, certs [][]byte) {
