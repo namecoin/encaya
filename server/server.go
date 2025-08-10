@@ -536,7 +536,21 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 		return nil, false, nil
 	}
 
-	safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, s.tldCert, s.tldPriv)
+	stapled := map[string]string{}
+
+	stapledKeys := []string{"pidigits", "pubb64"}
+	for _, stapledKey := range stapledKeys {
+		stapledValue := req.FormValue(stapledKey)
+		if stapledValue != "" {
+			stapled[stapledKey] = stapledValue
+		}
+	}
+
+	if len(stapled) == 0 {
+		stapled = nil
+	}
+
+	safeCert, err := safetlsa.GetCertFromTLSA(domain, tlsa, s.tldCert, s.tldPriv, stapled)
 	if err != nil {
 		return nil, false, err
 	}
