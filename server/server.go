@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -24,10 +25,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/hlandau/xlog"
 	"github.com/miekg/dns"
 
 	"github.com/namecoin/crosssign"
+	"github.com/namecoin/ncbtcjson"
+	"github.com/namecoin/ncrpcclient"
 	"github.com/namecoin/qlib"
 	"github.com/namecoin/safetlsa"
 )
@@ -65,6 +70,8 @@ type Server struct {
 
 	tcpListener net.Listener
 	tlsListener net.Listener
+
+	namecoin *ncrpcclient.Client
 }
 
 //nolint:lll
@@ -77,6 +84,12 @@ type Config struct {
 	RootKey     string `default:"root_key.pem" usage:"Sign with this root CA private key."`
 	ListenChain string `default:"listen_chain.pem" usage:"Listen with this TLS certificate chain."`
 	ListenKey   string `default:"listen_key.pem" usage:"Listen with this TLS private key."`
+
+	NamecoinRPCUsername   string `default:"" usage:"Namecoin RPC username"`
+	NamecoinRPCPassword   string `default:"" usage:"Namecoin RPC password"`
+	NamecoinRPCAddress    string `default:"127.0.0.1:8336" usage:"Namecoin RPC server address"`
+	NamecoinRPCCookiePath string `default:"" usage:"Namecoin RPC cookie path (used if password is unspecified)"`
+	NamecoinRPCTimeout    int    `default:"1500" usage:"Timeout (in milliseconds) for Namecoin RPC requests"`
 
 	ConfigDir string // path to interpret filenames relative to
 }
@@ -128,6 +141,21 @@ func New(cfg *Config) (*Server, error) {
 	}
 
 	srv.tlsListener, err = net.ListenTCP("tcp", tlsAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Connect to local namecoin core RPC server using HTTP POST mode.
+	namecoinCfg := &rpcclient.ConnConfig{
+		Host:         cfg.NamecoinRPCAddress,
+		User:         cfg.NamecoinRPCUsername,
+		Pass:         cfg.NamecoinRPCPassword,
+		CookiePath:   cfg.NamecoinRPCCookiePath,
+		HTTPPostMode: true, // Namecoin core only supports HTTP POST mode
+		DisableTLS:   true, // Namecoin core does not provide TLS by default
+	}
+
+	srv.namecoin, err = ncrpcclient.New(namecoinCfg, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +386,142 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
+	log.Debugf("querying for pubkey via off-chain message: %s", domain)
+
+	pubBase64 := req.FormValue("pubb64")
+	sigsJSON := req.FormValue("sigs")
+
+	if pubBase64 == "" {
+		log.Debugf("empty stapled public key: %s", domain)
+		return nil, nil
+	}
+
+	if sigsJSON == "" {
+		log.Debugf("empty stapled signature list: %s", domain)
+		return nil, nil
+	}
+
+	var blockchainName string
+
+	// Remove eTLD suffix
+	if strings.HasSuffix(domain, ".bit") {
+		blockchainName = strings.TrimSuffix(domain, ".bit")
+	} else if strings.HasSuffix(domain, ".bit.onion") {
+		blockchainName = strings.TrimSuffix(domain, ".bit.onion")
+	} else {
+		log.Debugf("eTLD doesn't support blockchain messages: %s", domain)
+		return nil, nil
+	}
+
+	// Remove subdomain labels
+	labels := strings.Split(blockchainName, ".")
+	blockchainName = labels[len(labels)-1]
+
+	// Prepend blockchain namespace
+	blockchainName = "d/" + blockchainName
+
+	// We use RawURLEncoding because it results in compact, readable URL's.
+	pubBytes, err := base64.RawURLEncoding.DecodeString(pubBase64)
+	if err != nil {
+		// Requested public key is malformed.
+		log.Debugf("stapled public key is invalid base64: %s", domain)
+		return nil, nil
+	}
+
+	pubHex := hex.EncodeToString(pubBytes)
+
+	sigs := []map[string]string{}
+
+	err = json.Unmarshal([]byte(sigsJSON), &sigs)
+	if err != nil {
+		log.Debugf("failed to Unmarshal blockchain message sigs for %s: %s", domain, err)
+		return nil, nil)
+	}
+
+	// TODO: stream isolation
+	nameData, err := s.namecoin.NameShow(blockchainName, &ncbtcjson.NameShowOptions{StreamID: ""})
+	if err != nil {
+		if jerr, ok := err.(*btcjson.RPCError); ok {
+			if jerr.Code == btcjson.ErrRPCWallet {
+				// ErrRPCWallet from name_show indicates that
+				// the name does not exist.
+				log.Debugf("name does not exist on blockchain: %s", domain)
+				return nil, nil
+			}
+		}
+
+		// Some error besides NXDOMAIN happened; pass that error
+		// through unaltered.
+		log.Debugf("blockchain query failed for %s: %s", domain, err)
+		return nil, err
+	}
+
+	nameAddress := nameData.Address
+
+	for _, sig := range sigs {
+		sigAddress, ok := sig["blockchainaddress"]
+		if !ok {
+			log.Debugf("stapled signature does not contain address: %s", domain)
+			continue
+		}
+
+		if sigAddress != nameAddress {
+			log.Debugf("stapled signature's address %s is not the current name owner %s: %s", sigAddress, nameAddress, domain)
+			continue
+		}
+
+		addressDecoded := AddressPassThrough(nameAddress)
+
+		messageHeader := "Namecoin X.509 Stapled Certification: "
+
+		messageData := map[string]string{
+			"domain": domain,
+			"x509pub": pubBase64,
+			"address": sigAddress,
+		}
+
+		messageDataBytes, err := json.Marshal(messageData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to Marshal blockchain message data: %w", err)
+		}
+
+		messageStr := messageHeader + string(messageDataBytes)
+
+		sigSig, ok := sig["blockchainsig"]
+		if !ok {
+			log.Debugf("stapled signature does not contain signature: %s", domain)
+			continue
+		}
+
+		verifyResult, err := s.namecoin.VerifyMessage(addressDecoded, sigSig, messageStr)
+		if err != nil {
+			log.Debugf("blockchain message signature verification failed for %s: %s", domain, err)
+			continue
+		}
+		if !verifyResult {
+			log.Debugf("blockchain message signature verification returned false: %s", domain)
+			continue
+		}
+
+		return &dns.TLSA{
+			Hdr: dns.RR_Header{Name: "", Rrtype: dns.TypeTLSA, Class: dns.ClassINET,
+				Ttl: 600},
+			Usage:        2,
+			Selector:     1,
+			MatchingType: 0,
+			Certificate:  strings.ToUpper(pubHex),
+		}, nil
+	}
+
+	// No sigs matched. Return no cert.
+	log.Debugf("off-chain message list exhausted: %s", domain)
+	return nil, nil
+}
+
 func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
+	log.Debugf("querying for pubkey via DNS: %s", domain)
+
 	qparams := qlib.DefaultParams()
 	qparams.Port = s.cfg.DNSPort
 	qparams.Ad = true
@@ -397,6 +560,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return no cert.
+		log.Debugf("wildcard subdomain doesn't exist: %s", domain)
 		return nil, nil
 	}
 
@@ -406,6 +570,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
 		// the owner of the requested zone).  If neither is the case,
 		// then return no cert.
+		log.Debugf("DNS record not authenticated and not authoritative: %s", domain)
 		return nil, nil
 	}
 
@@ -414,6 +579,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
+		log.Debugf("stapled public key hash is invalid hex: %s", domain)
 		return nil, nil
 	}
 
@@ -423,6 +589,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	pubBytes, err := base64.RawURLEncoding.DecodeString(pubBase64)
 	if err != nil {
 		// Requested public key is malformed.
+		log.Debugf("stapled public key is invalid base64: %s", domain)
 		return nil, nil
 	}
 
@@ -523,6 +690,13 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 	tlsa, err := s.lookupPi(req, domain)
 	if err != nil {
 		return nil, false, err
+	}
+
+	if tlsa == nil {
+		tlsa, err = s.lookupBlockchainMessage(req, domain)
+		if err != nil {
+			return nil, false, err
+		}
 	}
 
 	if tlsa == nil {
