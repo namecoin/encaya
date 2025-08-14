@@ -387,14 +387,18 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 }
 
 func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
+	log.Debugf("querying for pubkey via off-chain message: %s", domain)
+
 	pubBase64 := req.FormValue("pubb64")
 	sigsJSON := req.FormValue("sigs")
 
 	if pubBase64 == "" {
+		log.Debugf("empty stapled public key: %s", domain)
 		return nil, nil
 	}
 
 	if sigsJSON == "" {
+		log.Debugf("empty stapled signature list: %s", domain)
 		return nil, nil
 	}
 
@@ -406,6 +410,7 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 	} else if strings.HasSuffix(domain, ".bit.onion") {
 		blockchainName = strings.TrimSuffix(domain, ".bit.onion")
 	} else {
+		log.Debugf("eTLD doesn't support blockchain messages: %s", domain)
 		return nil, nil
 	}
 
@@ -420,6 +425,7 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 	pubBytes, err := base64.RawURLEncoding.DecodeString(pubBase64)
 	if err != nil {
 		// Requested public key is malformed.
+		log.Debugf("stapled public key is invalid base64: %s", domain)
 		return nil, nil
 	}
 
@@ -439,12 +445,14 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 			if jerr.Code == btcjson.ErrRPCWallet {
 				// ErrRPCWallet from name_show indicates that
 				// the name does not exist.
+				log.Debugf("name does not exist on blockchain: %s", domain)
 				return nil, nil
 			}
 		}
 
 		// Some error besides NXDOMAIN happened; pass that error
 		// through unaltered.
+		log.Debugf("blockchain query failed for %s: %s", domain, err)
 		return nil, err
 	}
 
@@ -453,10 +461,12 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 	for _, sig := range sigs {
 		sigAddress, ok := sig["blockchainaddress"]
 		if !ok {
+			log.Debugf("stapled signature does not contain address: %s", domain)
 			continue
 		}
 
 		if sigAddress != nameAddress {
+			log.Debugf("stapled signature's address %s is not the current name owner %s: %s", sigAddress, nameAddress, domain)
 			continue
 		}
 
@@ -479,14 +489,17 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 
 		sigSig, ok := sig["blockchainsig"]
 		if !ok {
+			log.Debugf("stapled signature does not contain signature: %s", domain)
 			continue
 		}
 
 		verifyResult, err := s.namecoin.VerifyMessage(addressDecoded, sigSig, messageStr)
 		if err != nil {
+			log.Debugf("blockchain message signature verification failed for %s: %s", domain, err)
 			continue
 		}
 		if !verifyResult {
+			log.Debugf("blockchain message signature verification returned false: %s", domain)
 			continue
 		}
 
@@ -501,10 +514,13 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 	}
 
 	// No sigs matched. Return no cert.
+	log.Debugf("off-chain message list exhausted: %s", domain)
 	return nil, nil
 }
 
 func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
+	log.Debugf("querying for pubkey via DNS: %s", domain)
+
 	qparams := qlib.DefaultParams()
 	qparams.Port = s.cfg.DNSPort
 	qparams.Ad = true
@@ -543,6 +559,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return no cert.
+		log.Debugf("wildcard subdomain doesn't exist: %s", domain)
 		return nil, nil
 	}
 
@@ -552,6 +569,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
 		// the owner of the requested zone).  If neither is the case,
 		// then return no cert.
+		log.Debugf("DNS record not authenticated and not authoritative: %s", domain)
 		return nil, nil
 	}
 
@@ -560,6 +578,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
+		log.Debugf("stapled public key hash is invalid hex: %s", domain)
 		return nil, nil
 	}
 
@@ -569,6 +588,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	pubBytes, err := base64.RawURLEncoding.DecodeString(pubBase64)
 	if err != nil {
 		// Requested public key is malformed.
+		log.Debugf("stapled public key is invalid base64: %s", domain)
 		return nil, nil
 	}
 
