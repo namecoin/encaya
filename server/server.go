@@ -436,7 +436,7 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 	err = json.Unmarshal([]byte(sigsJSON), &sigs)
 	if err != nil {
 		log.Debugf("failed to Unmarshal blockchain message sigs for %s: %s", domain, err)
-		return nil, nil)
+		return nil, nil
 	}
 
 	// TODO: stream isolation
@@ -712,7 +712,7 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 
 	stapled := map[string]string{}
 
-	stapledKeys := []string{"pidigits", "pubb64"}
+	stapledKeys := []string{"pidigits", "pubb64", "sigs"}
 	for _, stapledKey := range stapledKeys {
 		stapledValue := req.FormValue(stapledKey)
 		if stapledValue != "" {
