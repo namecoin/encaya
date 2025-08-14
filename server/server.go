@@ -435,7 +435,8 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 
 	err = json.Unmarshal([]byte(sigsJSON), &sigs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to Unmarshal blockchain message sigs: %w", err)
+		log.Debugf("failed to Unmarshal blockchain message sigs for %s: %s", domain, err)
+		return nil, nil)
 	}
 
 	// TODO: stream isolation
