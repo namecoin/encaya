@@ -712,7 +712,7 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 
 	stapled := map[string]string{}
 
-	stapledKeys := []string{"pidigits", "pubb64"}
+	stapledKeys := []string{"pidigits", "pubb64", "sigs"}
 	for _, stapledKey := range stapledKeys {
 		stapledValue := req.FormValue(stapledKey)
 		if stapledValue != "" {
