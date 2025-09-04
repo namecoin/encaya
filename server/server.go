@@ -11,7 +11,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -25,13 +24,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/hlandau/xlog"
 	"github.com/miekg/dns"
 
 	"github.com/namecoin/crosssign"
-	"github.com/namecoin/ncbtcjson"
+	"github.com/namecoin/encaya/verifystapled"
 	"github.com/namecoin/ncrpcclient"
 	"github.com/namecoin/qlib"
 	"github.com/namecoin/safetlsa"
@@ -389,141 +387,45 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
 	log.Debugf("querying for pubkey via off-chain message: %s", domain)
 
-	notAfter := req.FormValue("notafter")
-	pubBase64 := req.FormValue("pubb64")
-	sigsJSON := req.FormValue("sigs")
+	stapledData := &verifystapled.StapledData{
+		MessageHeader: "Namecoin X.509 Stapled Certification: ",
+		PubType: "x509pub",
 
-	if pubBase64 == "" {
-		log.Debugf("empty stapled public key: %s", domain)
+		Domain: domain,
+
+		PubBase64: req.FormValue("pubb64"),
+		SigsJSON: req.FormValue("sigs"),
+
+		NotAfter: req.FormValue("notafter"),
+	}
+
+	ok, err := stapledData.Verify(s.namecoin)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, nil
 	}
 
-	if sigsJSON == "" {
-		log.Debugf("empty stapled signature list: %s", domain)
-		return nil, nil
-	}
-
-	var blockchainName string
-
-	// Remove eTLD suffix
-	if strings.HasSuffix(domain, ".bit") {
-		blockchainName = strings.TrimSuffix(domain, ".bit")
-	} else if strings.HasSuffix(domain, ".bit.onion") {
-		blockchainName = strings.TrimSuffix(domain, ".bit.onion")
-	} else {
-		log.Debugf("eTLD doesn't support blockchain messages: %s", domain)
-		return nil, nil
-	}
-
-	// Remove subdomain labels
-	labels := strings.Split(blockchainName, ".")
-	blockchainName = labels[len(labels)-1]
-
-	// Prepend blockchain namespace
-	blockchainName = "d/" + blockchainName
+	// At this point, signature check has passed.
 
 	// We use RawURLEncoding because it results in compact, readable URL's.
-	pubBytes, err := base64.RawURLEncoding.DecodeString(pubBase64)
+	pubBytes, err := base64.RawURLEncoding.DecodeString(stapledData.PubBase64)
 	if err != nil {
-		// Requested public key is malformed.
 		log.Debugf("stapled public key is invalid base64: %s", domain)
 		return nil, nil
 	}
 
 	pubHex := hex.EncodeToString(pubBytes)
 
-	sigs := []map[string]string{}
-
-	err = json.Unmarshal([]byte(sigsJSON), &sigs)
-	if err != nil {
-		log.Debugf("failed to Unmarshal blockchain message sigs for %s: %s", domain, err)
-		return nil, nil
-	}
-
-	// TODO: stream isolation
-	nameData, err := s.namecoin.NameShow(blockchainName, &ncbtcjson.NameShowOptions{StreamID: ""})
-	if err != nil {
-		if jerr, ok := err.(*btcjson.RPCError); ok {
-			if jerr.Code == btcjson.ErrRPCWallet {
-				// ErrRPCWallet from name_show indicates that
-				// the name does not exist.
-				log.Debugf("name does not exist on blockchain: %s", domain)
-				return nil, nil
-			}
-		}
-
-		// Some error besides NXDOMAIN happened; pass that error
-		// through unaltered.
-		log.Debugf("blockchain query failed for %s: %s", domain, err)
-		return nil, err
-	}
-
-	nameAddress := nameData.Address
-
-	for _, sig := range sigs {
-		sigAddress, ok := sig["blockchainaddress"]
-		if !ok {
-			log.Debugf("stapled signature does not contain address: %s", domain)
-			continue
-		}
-
-		if sigAddress != nameAddress {
-			log.Debugf("stapled signature's address %s is not the current name owner %s: %s", sigAddress, nameAddress, domain)
-			continue
-		}
-
-		addressDecoded := AddressPassThrough(nameAddress)
-
-		messageHeader := "Namecoin X.509 Stapled Certification: "
-
-		messageData := map[string]string{
-			"domain": domain,
-			"x509pub": pubBase64,
-			"address": sigAddress,
-		}
-
-		if notAfter != "" {
-			messageData["notafter"] = notAfter
-		} else {
-			log.Debugf("stapled notafter field missing: %s", domain)
-		}
-
-		messageDataBytes, err := json.Marshal(messageData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to Marshal blockchain message data: %w", err)
-		}
-
-		messageStr := messageHeader + string(messageDataBytes)
-
-		sigSig, ok := sig["blockchainsig"]
-		if !ok {
-			log.Debugf("stapled signature does not contain signature: %s", domain)
-			continue
-		}
-
-		verifyResult, err := s.namecoin.VerifyMessage(addressDecoded, sigSig, messageStr)
-		if err != nil {
-			log.Debugf("blockchain message signature verification failed for %s: %s", domain, err)
-			continue
-		}
-		if !verifyResult {
-			log.Debugf("blockchain message signature verification returned false: %s", domain)
-			continue
-		}
-
-		return &dns.TLSA{
-			Hdr: dns.RR_Header{Name: "", Rrtype: dns.TypeTLSA, Class: dns.ClassINET,
-				Ttl: 600},
-			Usage:        2,
-			Selector:     1,
-			MatchingType: 0,
-			Certificate:  strings.ToUpper(pubHex),
-		}, nil
-	}
-
-	// No sigs matched. Return no cert.
-	log.Debugf("off-chain message list exhausted: %s", domain)
-	return nil, nil
+	return &dns.TLSA{
+		Hdr: dns.RR_Header{Name: "", Rrtype: dns.TypeTLSA, Class: dns.ClassINET,
+			Ttl: 600},
+		Usage:        2,
+		Selector:     1,
+		MatchingType: 0,
+		Certificate:  strings.ToUpper(pubHex),
+	}, nil
 }
 
 func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {

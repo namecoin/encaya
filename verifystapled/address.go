@@ -1,4 +1,4 @@
-package server
+package verifystapled
 
 import (
 	"github.com/btcsuite/btcd/chaincfg"
