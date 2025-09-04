@@ -389,6 +389,7 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
 	log.Debugf("querying for pubkey via off-chain message: %s", domain)
 
+	notAfter := req.FormValue("notafter")
 	pubBase64 := req.FormValue("pubb64")
 	sigsJSON := req.FormValue("sigs")
 
@@ -479,6 +480,12 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 			"domain": domain,
 			"x509pub": pubBase64,
 			"address": sigAddress,
+		}
+
+		if notAfter != "" {
+			messageData["notafter"] = notAfter
+		} else {
+			log.Debugf("stapled notafter field missing: %s", domain)
 		}
 
 		messageDataBytes, err := json.Marshal(messageData)
@@ -712,7 +719,7 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 
 	stapled := map[string]string{}
 
-	stapledKeys := []string{"pidigits", "pubb64", "sigs"}
+	stapledKeys := []string{"notafter", "pidigits", "pubb64", "sigs"}
 	for _, stapledKey := range stapledKeys {
 		stapledValue := req.FormValue(stapledKey)
 		if stapledValue != "" {
