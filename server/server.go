@@ -57,6 +57,9 @@ type Server struct {
 	tldCertPem        []byte
 	tldCertPemString  string
 
+	crlPriv interface{}
+	crlIssuer *x509.Certificate
+
 	// These caches don't yet support stream isolation; see
 	// https://github.com/namecoin/encaya/issues/8
 	domainCertCache        map[string][]cachedCert
@@ -119,6 +122,7 @@ func New(cfg *Config) (*Server, error) {
 	http.HandleFunc("/", srv.indexHandler)
 	http.HandleFunc("/lookup", srv.lookupHandler)
 	http.HandleFunc("/aia", srv.aiaHandler)
+	http.HandleFunc("/crl", srv.crlHandler)
 	http.HandleFunc("/get-new-negative-ca", srv.getNewNegativeCAHandler)
 	http.HandleFunc("/cross-sign-ca", srv.crossSignCAHandler)
 	http.HandleFunc("/original-from-serial", srv.originalFromSerialHandler)
@@ -209,6 +213,30 @@ func (srv *Server) initCerts() {
 		Bytes: srv.tldCert,
 	})
 	srv.tldCertPemString = string(srv.tldCertPem)
+
+	srv.crlPriv, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		log.Fatale(err, "Unable to generate CRL key")
+	}
+
+	srv.crlIssuer := &x509.Certificate{
+		// TODO: pick a better SerialNumber
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			// TODO: pick a better CommonName
+			CommonName:   "Encaya CRL Signer",
+			SerialNumber: "Namecoin TLS Certificate",
+		},
+		NotBefore: time.Now().Add(-1 * safetlsa.ValidityShortTerm()),
+		NotAfter:  time.Now().Add(43800 * time.Hour),
+
+		IsCA:                  false,
+		KeyUsage:              x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+
+		// TODO: pick a better SubjectKeyId
+		SubjectKeyId: []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+	}
 }
 
 func (s *Server) Start() error {
@@ -735,6 +763,49 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	_, err = io.WriteString(writer, string(requestedCert))
+	if err != nil {
+		log.Debuge(err, "write error")
+	}
+}
+
+func (s *Server) crlHandler(writer http.ResponseWriter, req *http.Request) {
+	writer.Header().Set("Content-Type", "application/pkix-crl")
+
+	commonName := req.FormValue("domain")
+
+	log.Debugf("CRL lookup: %s", commonName)
+
+	startTime := time.Now().Add(-1 * safetlsa.ValidityShortTerm())
+	endTime := time.Now().Add(2 * safetlsa.ValidityShortTerm())
+
+	entries := []x509.RevocationListEntry{}
+
+	// BEGIN DUMMY DATA
+	entry := x509.RevocationListEntry{
+		SerialNumber: big.NewInt(0x7DA660BF9103563747F13C697B3AE90D),
+		RevocationTime: startTime,
+	}
+	// END DUMMY DATA
+
+	entries = append(entries, entry)
+
+	crlTemplate := &x509.RevocationList{
+		Issuer: *s.crlIssuer,
+		RevokedCertificateEntries: entries,
+
+		Number: big.NewInt(startTime.Unix()),
+		ThisUpdate: startTime,
+		NextUpdate: endTime,
+	}
+
+	crlDER, err := x509.CreateRevocationList(rand.Reader, crlTemplate, s.crlIssuer, s.crlPriv)
+	if err != nil {
+		log.Debuge(err, "failed to sign CRL")
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	_, err = io.WriteString(writer, string(crlDER))
 	if err != nil {
 		log.Debuge(err, "write error")
 	}
