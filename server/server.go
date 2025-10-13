@@ -57,7 +57,7 @@ type Server struct {
 	tldCertPem        []byte
 	tldCertPemString  string
 
-	crlPriv interface{}
+	crlPriv crypto.Signer
 	crlIssuer *x509.Certificate
 
 	// These caches don't yet support stream isolation; see
@@ -219,7 +219,7 @@ func (srv *Server) initCerts() {
 		log.Fatale(err, "Unable to generate CRL key")
 	}
 
-	srv.crlIssuer := &x509.Certificate{
+	srv.crlIssuer = &x509.Certificate{
 		// TODO: pick a better SerialNumber
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
@@ -781,8 +781,10 @@ func (s *Server) crlHandler(writer http.ResponseWriter, req *http.Request) {
 	entries := []x509.RevocationListEntry{}
 
 	// BEGIN DUMMY DATA
+	serial := new(big.Int)
+	serial.SetString("7DA660BF9103563747F13C697B3AE90D", 16)
 	entry := x509.RevocationListEntry{
-		SerialNumber: big.NewInt(0x7DA660BF9103563747F13C697B3AE90D),
+		SerialNumber: serial,
 		RevocationTime: startTime,
 	}
 	// END DUMMY DATA
@@ -790,7 +792,7 @@ func (s *Server) crlHandler(writer http.ResponseWriter, req *http.Request) {
 	entries = append(entries, entry)
 
 	crlTemplate := &x509.RevocationList{
-		Issuer: *s.crlIssuer,
+		Issuer: *s.crlIssuer.Subject,
 		RevokedCertificateEntries: entries,
 
 		Number: big.NewInt(startTime.Unix()),
