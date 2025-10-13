@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -792,7 +793,7 @@ func (s *Server) crlHandler(writer http.ResponseWriter, req *http.Request) {
 	entries = append(entries, entry)
 
 	crlTemplate := &x509.RevocationList{
-		Issuer: *s.crlIssuer.Subject,
+		Issuer: s.crlIssuer.Subject,
 		RevokedCertificateEntries: entries,
 
 		Number: big.NewInt(startTime.Unix()),
