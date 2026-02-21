@@ -23,17 +23,22 @@ task:
         - go mod tidy
   lint_script:
     - cd $(go env GOPATH)/src/github.com/$CIRRUS_REPO_FULL_NAME/
-    - golangci-lint run --enable-all --disable exhaustivestruct,exhaustruct,gochecknoglobals,gomnd $GOLANGCI_ARGS -v --timeout 5m --out-format json > $CIRRUS_WORKING_DIR/lint-report.json
+    - golangci-lint run $GOLANGCI_ARGS -v --timeout 5m --output.json.path $CIRRUS_WORKING_DIR/lint-report.json
+  # Not running "copyloopvar" linter because it needs Go 1.22+, which isn't supported yet in gccgo 14 (Go 1.16-1.18), which is what Debian Trixie/Stable uses.
+  # Not running "depguard" linter because it looks too niche.
+  # Not running "exhaustruct" linter because it looks too niche.
+  # Not running "gosmopolitan" linter because it's not aimed at English-language code.
+  # Not running "intrange" linter because it needs Go 1.22+, which isn't supported yet in gccgo 14 (Go 1.16-1.18), which is what Debian Trixie/Stable uses.
   matrix:
     - name: Go Lint $GOOS New
       env:
-        GOLANGCI_ARGS: "--new-from-rev=HEAD~"
+        GOLANGCI_ARGS: "--new-from-rev=HEAD~ --enable=cyclop,err113,forcetypeassert,funlen,gocognit,goconst,gocritic,gosec,mnd,modernize,nlreturn,wsl_v5"
     - name: Go Lint $GOOS Mandatory
       env:
-        GOLANGCI_ARGS: "--disable=contextcheck,cyclop,forbidigo,funlen,gocognit,goerr113,gofumpt,golint,lll,maligned,nestif,nolintlint,paralleltest,revive,scopelint,stylecheck,thelper,unconvert,unparam,wrapcheck"
+        GOLANGCI_ARGS: "--enable=asasalint,asciicheck,bidichk,bodyclose,canonicalheader,decorder,dupl,dupword,durationcheck,embeddedstructfieldcheck,errcheck,errchkjson,errname,exhaustive,exptostd,gocheckcompilerdirectives,godoclint,godot,goprintffuncname,govet,ineffassign,misspell,nakedret,predeclared,staticcheck,unconvert,unparam,unused,usestdlibvars,wastedassign"
     - name: Go Lint $GOOS
       env:
-        GOLANGCI_ARGS: ""
+        GOLANGCI_ARGS: "--enable=cyclop,err113,forcetypeassert,funlen,gocognit,goconst,gocritic,gosec,mnd,modernize,nlreturn,wsl_v5"
       allow_failures: true
   matrix:
     - env:

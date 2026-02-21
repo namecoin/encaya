@@ -1,12 +1,11 @@
-linters-settings:
-  gci:
-    sections:
-      - standard
-      - default
-      - prefix(github.com/namecoin)
-  goimports:
-    local-prefixes: "github.com/namecoin"
-  gomoddirectives:
-    replace-local: true
-    replace-allow-list:
-      - "github.com/namecoin/x509-compressed"
+version: "2"
+formatters:
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/namecoin)
+    goimports:
+      local-prefixes:
+        - github.com/namecoin
