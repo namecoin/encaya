@@ -23,7 +23,7 @@ task:
         - go mod tidy
   lint_script:
     - cd $(go env GOPATH)/src/github.com/$CIRRUS_REPO_FULL_NAME/
-    - golangci-lint run $GOLANGCI_ARGS -v --timeout 5m --out-format json > $CIRRUS_WORKING_DIR/lint-report.json
+    - golangci-lint run $GOLANGCI_ARGS -v --timeout 5m --output.json.path $CIRRUS_WORKING_DIR/lint-report.json
   # Not running "copyloopvar" linter because it needs Go 1.22+, which isn't supported yet in gccgo 14 (Go 1.16-1.18), which is what Debian Trixie/Stable uses.
   # Not running "depguard" linter because it looks too niche.
   # Not running "exhaustruct" linter because it looks too niche.
