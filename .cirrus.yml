@@ -32,13 +32,13 @@ task:
   matrix:
     - name: Go Lint $GOOS New
       env:
-        GOLANGCI_ARGS: "--new-from-rev=HEAD~ --enable=cyclop,err113,forcetypeassert,funlen,gocheckcompilerdirectives,gocognit,goconst,gocritic,godoclint,godot,goprintffuncname,gosec,govet,ineffassign,misspell,mnd,modernize,nakedret,nlreturn,predeclared,staticcheck,unconvert,unparam,unused,usestdlibvars,wastedassign,wsl_v5"
+        GOLANGCI_ARGS: "--new-from-rev=HEAD~ --enable=cyclop,err113,forcetypeassert,funlen,gocognit,goconst,gocritic,gosec,mnd,modernize,nlreturn,wsl_v5"
     - name: Go Lint $GOOS Mandatory
       env:
-        GOLANGCI_ARGS: "--enable=asasalint,asciicheck,bidichk,bodyclose,canonicalheader,decorder,dupl,dupword,durationcheck,embeddedstructfieldcheck,errcheck,errchkjson,errname,exhaustive,exptostd,govet,ineffassign,staticcheck,unused"
+        GOLANGCI_ARGS: "--enable=asasalint,asciicheck,bidichk,bodyclose,canonicalheader,decorder,dupl,dupword,durationcheck,embeddedstructfieldcheck,errcheck,errchkjson,errname,exhaustive,exptostd,gocheckcompilerdirectives,godoclint,godot,goprintffuncname,govet,ineffassign,misspell,nakedret,predeclared,staticcheck,unconvert,unparam,unused,usestdlibvars,wastedassign"
     - name: Go Lint $GOOS
       env:
-        GOLANGCI_ARGS: "--enable=cyclop,err113,forcetypeassert,funlen,gocheckcompilerdirectives,gocognit,goconst,gocritic,godoclint,godot,goprintffuncname,gosec,govet,ineffassign,misspell,mnd,modernize,nakedret,nlreturn,predeclared,staticcheck,unconvert,unparam,unused,usestdlibvars,wastedassign,wsl_v5"
+        GOLANGCI_ARGS: "--enable=cyclop,err113,forcetypeassert,funlen,gocognit,goconst,gocritic,gosec,mnd,modernize,nlreturn,wsl_v5"
       allow_failures: true
   matrix:
     - env:
