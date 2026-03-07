@@ -122,7 +122,7 @@ echo "Wait for registration to confirm"
 new_blocks 1
 
 echo "Update testlshashed.bit"
-$bitcoin_cli name_update 'd/testlshashed' "{\"ip\":\"127.0.0.1\",\"map\":{\"*\":{\"tls\":[[2,1,1,\"${spki_sha256_base64}\"]]}}}"
+$bitcoin_cli name_update 'd/testlshashed' '{"ip":"127.0.0.1","map":{"*":{"tls":[[2,1,1,"'"${spki_sha256_base64}"'"]]}}}'
 
 echo "Wait for update to confirm"
 new_blocks 1
