@@ -99,3 +99,78 @@ curl http://127.127.127.127/lookup?domain=.bit%20TLD%20CA | grep -i "BEGIN CERTI
 
 echo "Fetch testls.bit CA via curl"
 curl http://127.127.127.127/lookup?domain=testls.bit%20Domain%20AIA%20Parent%20CA | grep -i "BEGIN CERTIFICATE"
+
+echo "Generate ECDSA P-256 key pair for testlshashed.bit"
+openssl ecparam -name prime256v1 -genkey -noout -out testdata/testlshashed_key.pem
+
+echo "Extract SPKI in DER format"
+openssl ec -in testdata/testlshashed_key.pem -pubout -outform DER -out testdata/testlshashed_spki.der 2>/dev/null
+
+echo "Compute SHA-256 of SPKI"
+spki_sha256_base64=$(openssl dgst -sha256 -binary testdata/testlshashed_spki.der | base64)
+
+echo "Pre-register testlshashed.bit"
+$bitcoin_cli name_new 'd/testlshashed'
+
+echo "Wait for pre-registration to mature"
+new_blocks 12
+
+echo "Register testlshashed.bit"
+$bitcoin_cli name_firstupdate 'd/testlshashed'
+
+echo "Wait for registration to confirm"
+new_blocks 1
+
+echo "Update testlshashed.bit"
+$bitcoin_cli name_update 'd/testlshashed' "{\"ip\":\"127.0.0.1\",\"map\":{\"*\":{\"tls\":[[2,1,1,\"${spki_sha256_base64}\"]]}}}"
+
+echo "Wait for update to confirm"
+new_blocks 1
+
+echo "Query testlshashed.bit via Core"
+$bitcoin_cli name_show 'd/testlshashed'
+
+echo "Query testlshashed.bit IPv4 Authoritative via dig"
+dig_output=$(dig -p 5391 @127.0.0.1 A testlshashed.bit)
+echo "$dig_output"
+echo "Checking response correctness"
+echo "$dig_output" | grep "127.0.0.1"
+
+echo "Query testlshashed.bit TLS Authoritative via dig"
+dig_output=$(dig -p 5391 @127.0.0.1 TLSA "*.testlshashed.bit")
+echo "$dig_output"
+echo "Checking response correctness"
+tlsa_hex="$(openssl dgst -sha256 -binary testdata/testlshashed_spki.der | xxd -u -ps -c 500)"
+echo "$dig_output" | sed 's/ //g' | grep "$tlsa_hex"
+
+echo "Compute SPKI query parameters for Encaya"
+spki_b64url=$(basenc --base64url -w0 < testdata/testlshashed_spki.der | tr -d '=')
+spki_sha256_hex=$(openssl dgst -sha256 -hex testdata/testlshashed_spki.der | awk '{print $NF}')
+
+echo "Fetch testlshashed.bit Domain CA via curl"
+curl "http://127.127.127.127/lookup?domain=testlshashed.bit%20Domain%20AIA%20Parent%20CA&pubb64=${spki_b64url}&pubsha256=${spki_sha256_hex}" | grep -i "BEGIN CERTIFICATE"
+
+echo "Generate end-entity cert with AIA URL for testlshashed.bit"
+cat > testdata/ee_ext.cnf <<EOF
+[v3_ee]
+subjectAltName = DNS:testlshashed.bit
+authorityInfoAccess = caIssuers;URI:http://127.127.127.127/aia?domain=testlshashed.bit%20Domain%20AIA%20Parent%20CA&pubb64=${spki_b64url}&pubsha256=${spki_sha256_hex}
+EOF
+openssl req -new -key testdata/testlshashed_key.pem -out testdata/testlshashed.csr -subj "/CN=testlshashed.bit"
+openssl x509 -req -in testdata/testlshashed.csr -signkey testdata/testlshashed_key.pem -out testdata/testlshashed_ee.pem -days 1 -extfile testdata/ee_ext.cnf -extensions v3_ee
+
+echo "Start local HTTPS server for testlshashed.bit"
+openssl s_server -accept 4443 -cert testdata/testlshashed_ee.pem -key testdata/testlshashed_key.pem -www &
+sleep 2
+
+echo "Import Encaya root CA into Chromium NSS DB"
+mkdir -p "$HOME/.pki/nssdb"
+certutil -d "sql:$HOME/.pki/nssdb" -N --empty-password
+curl -s http://127.127.127.127/lookup?domain=Namecoin%20Root%20CA > testdata/root_ca.pem
+certutil -d "sql:$HOME/.pki/nssdb" -A -t "CT,C,C" -n "Encaya Root CA" -i testdata/root_ca.pem
+
+echo "Verify AIA chain via headless Chromium"
+chromium_output=$(chromium --headless --no-sandbox --disable-gpu --dump-dom "https://testlshashed.bit:4443/" 2>/dev/null)
+echo "$chromium_output"
+echo "Checking response correctness"
+echo "$chromium_output" | grep -i "s_server"
