@@ -125,7 +125,8 @@ task:
   install_script:
     - apt-get update
     # bind9-dnsutils contains dig
-    - apt-get install -y dnssec-trigger bind9-dnsutils xxd
+    - apt-get install -y dnssec-trigger bind9-dnsutils libnss3-tools xxd
+    - if [ "$CI_DISTRO" = "ubuntu" ]; then curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && apt-get update && apt-get install -y google-chrome-stable; else apt-get install -y chromium; fi
     # Namecoin Core
     # Temporarily downgrade Namecoin Core until deterministic salts with descriptor wallets are fixed.
     #- BITCOIND_URL=$(curl https://www.namecoin.org/download/ | grep x86_64-linux-gnu.tar.gz | grep -v 0.13.99 | grep --only-matching https://.*.tar.gz)
@@ -162,7 +163,7 @@ task:
     - chown encaya:encaya testdata/*.pem
     # Curiously, relative paths don't work here, they cause the .pem files to
     # not be detected.  Maybe file a bug with Hugo?
-    - encaya -conf "$(pwd)/testdata/encaya.conf"
+    - encaya -conf "$(pwd)/testdata/encaya.conf" -encaya.namecoinrpcaddress 127.0.0.1:18554 -encaya.namecoinrpcusername doggman -encaya.namecoinrpcpassword donkey
   regtest_script:
     - sleep 15s
     - testdata/regtest.sh

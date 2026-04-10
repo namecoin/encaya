@@ -460,12 +460,12 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	}
 
 	dnsResponse := result.ResponseMsg
-	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
+	if dnsResponse.Rcode != dns.RcodeSuccess && dnsResponse.Rcode != dns.RcodeNameError {
 		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
 		return nil, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
 	}
 
-	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
+	if dnsResponse.Rcode == dns.RcodeNameError {
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return no cert.
@@ -473,7 +473,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		return nil, nil
 	}
 
-	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
+	if !dnsResponse.AuthenticatedData && !dnsResponse.Authoritative {
 		// For security reasons, we only trust records that are
 		// authenticated (e.g. server is Unbound and has verified
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
@@ -734,7 +734,7 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 		writer.Header().Set("Cache-Control", "max-age="+maxAgeStr)
 	}
 
-	_, err = io.WriteString(writer, string(requestedCert))
+	_, err = writer.Write(requestedCert)
 	if err != nil {
 		log.Debuge(err, "write error")
 	}
