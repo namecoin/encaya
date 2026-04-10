@@ -1,2 +1,4 @@
 go.mod
 go.sum
+testdata/windows-runtime/
+windows-deps/

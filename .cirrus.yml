@@ -125,7 +125,8 @@ task:
   install_script:
     - apt-get update
     # bind9-dnsutils contains dig
-    - apt-get install -y dnssec-trigger bind9-dnsutils xxd
+    - apt-get install -y dnssec-trigger bind9-dnsutils libnss3-tools xxd
+    - if [ "$CI_DISTRO" = "ubuntu" ]; then curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && apt-get update && apt-get install -y google-chrome-stable; else apt-get install -y chromium; fi
     # Namecoin Core
     # Temporarily downgrade Namecoin Core until deterministic salts with descriptor wallets are fixed.
     #- BITCOIND_URL=$(curl https://www.namecoin.org/download/ | grep x86_64-linux-gnu.tar.gz | grep -v 0.13.99 | grep --only-matching https://.*.tar.gz)
@@ -162,13 +163,104 @@ task:
     - chown encaya:encaya testdata/*.pem
     # Curiously, relative paths don't work here, they cause the .pem files to
     # not be detected.  Maybe file a bug with Hugo?
-    - encaya -conf "$(pwd)/testdata/encaya.conf"
+    - encaya -conf "$(pwd)/testdata/encaya.conf" -encaya.namecoinrpcaddress 127.0.0.1:18554 -encaya.namecoinrpcusername doggman -encaya.namecoinrpcpassword donkey
   regtest_script:
     - sleep 15s
     - testdata/regtest.sh
   depends_on:
     - "Cross-Compile Go $GO_VERSION"
   env:
+    GO_VERSION: latest
+
+task:
+  name: "Functional Tests Windows Go $GO_VERSION"
+  alias: "Functional Tests"
+  compute_engine_instance:
+    image_project: windows-cloud
+    image: family/windows-2022
+    platform: windows
+    cpu: 4
+    memory: 8G
+  install_script:
+    - $ErrorActionPreference = 'Stop'; Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')); $env:PATH = "C:\ProgramData\chocolatey\bin;$env:PATH"
+    - |
+        $ErrorActionPreference = 'Stop'
+
+        function Invoke-ChocoWithRetry {
+          param(
+            [Parameter(Mandatory = $true)]
+            [string[]]$PackageNames,
+            [int]$MaxAttempts = 3,
+            [int]$DelaySeconds = 15
+          )
+
+          for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+            choco install -y @PackageNames
+            if ($LASTEXITCODE -eq 0) {
+              return
+            }
+
+            if ($attempt -ge $MaxAttempts) {
+              exit $LASTEXITCODE
+            }
+
+            Write-Host "Chocolatey install failed for $($PackageNames -join ', ') on attempt $attempt/$MaxAttempts; retrying in $DelaySeconds seconds"
+            Start-Sleep -Seconds $DelaySeconds
+          }
+        }
+
+        function Install-ChromeWithRetry {
+          param(
+            [int]$MaxAttempts = 3,
+            [int]$DelaySeconds = 15
+          )
+
+          $chromeBinary = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+          $chromeMsiPath = Join-Path $env:TEMP 'googlechromestandaloneenterprise64.msi'
+
+          for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+            if (Test-Path $chromeBinary) {
+              return
+            }
+
+            if (Test-Path $chromeMsiPath) {
+              Remove-Item $chromeMsiPath -Force
+            }
+
+            Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/googlechromestandaloneenterprise64.msi' -OutFile $chromeMsiPath
+            $installer = Start-Process msiexec.exe -ArgumentList @('/i', $chromeMsiPath, '/qn', '/norestart') -Wait -PassThru
+
+            if ($installer.ExitCode -in @(0, 3010) -and (Test-Path $chromeBinary)) {
+              return
+            }
+
+            if ($attempt -ge $MaxAttempts) {
+              exit $(if ($installer.ExitCode) { $installer.ExitCode } else { 1 })
+            }
+
+            Write-Host "Chrome install attempt $attempt/$MaxAttempts did not produce $chromeBinary; retrying in $DelaySeconds seconds"
+            Start-Sleep -Seconds $DelaySeconds
+          }
+        }
+
+        Invoke-ChocoWithRetry -PackageNames @('openssl.light', 'unbound')
+        Install-ChromeWithRetry
+    - if (Test-Path windows-deps) { Remove-Item windows-deps -Recurse -Force }
+    - New-Item -ItemType Directory -Path windows-deps | Out-Null
+    - $ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri 'https://www.namecoin.org/files/namecoin-core/namecoin-core-22.0/namecoin-nc22.0-win64.zip' -OutFile 'windows-deps\namecoin.zip'
+    - Expand-Archive -Path 'windows-deps\namecoin.zip' -DestinationPath 'windows-deps'
+    - $ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri 'https://api.cirrus-ci.com/v1/artifact/github/namecoin/ncdns/Cross-Compile%20Go%20latest/binaries/dist/ncdns--windows_amd64.tar.gz' -OutFile 'windows-deps\ncdns.tar.gz'
+    - tar -xf windows-deps\ncdns.tar.gz -C windows-deps; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - $ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri "https://api.cirrus-ci.com/v1/artifact/build/$env:CIRRUS_BUILD_ID/Cross-Compile%20Go%20latest/binaries/dist/encaya--windows_amd64.tar.gz" -OutFile 'windows-deps\encaya.tar.gz'
+    - tar -xf windows-deps\encaya.tar.gz -C windows-deps; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  regtest_script:
+    - powershell.exe -NoLogo -ExecutionPolicy Bypass -File testdata\regtest.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  depends_on:
+    - "Cross-Compile Go $GO_VERSION"
+  env:
+    CIRRUS_SHELL: powershell
+    ENCAYA_WINDOWS_MANAGE_SERVICES: "1"
+    ENCAYA_WINDOWS_USE_SERVICE_CONTROL: "1"
     GO_VERSION: latest
 
 task:
