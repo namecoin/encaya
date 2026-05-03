@@ -437,49 +437,71 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	qparams.Fallback = true
 	qparams.Tcp = true // Workaround for https://github.com/miekg/exdns/issues/19
 
-	args := []string{}
+	baseArgs := []string{}
 	// Set the custom DNS server if requested
 	if s.cfg.DNSAddress != "" {
-		args = append(args, "@"+s.cfg.DNSAddress)
+		baseArgs = append(baseArgs, "@"+s.cfg.DNSAddress)
 	}
 	// Set qtype to TLSA
-	args = append(args, "TLSA")
-	// Set qname to all protocols and all ports of requested hostname
-	args = append(args, "*."+domain)
+	baseArgs = append(baseArgs, "TLSA")
 
-	result, err := qparams.Do(args)
+	// Modern Namecoin records sometimes publish their `tls` array at the
+	// host map level itself rather than nested under `_tcp/_443/`. ncdns
+	// then serves the TLSA at the bare host name, not at
+	// `_443._tcp.<host>`. We therefore query both `*.<domain>` (classic
+	// DANE wildcard form, covers any port/protocol) and `<domain>`
+	// (host-level form), and merge whatever Answer sections come back.
+	queryName := func(qname string) ([]dns.RR, error) {
+		callArgs := append([]string{}, baseArgs...)
+		callArgs = append(callArgs, qname)
+
+		qresult, qerr := qparams.Do(callArgs)
+		if qerr != nil {
+			log.Debuge(qerr, "qlib error")
+			return nil, fmt.Errorf("qlib error: %w", qerr)
+		}
+		if qresult.ResponseMsg == nil {
+			return nil, fmt.Errorf("qlib error: nil response")
+		}
+
+		msg := qresult.ResponseMsg
+		if msg.MsgHdr.Rcode != dns.RcodeSuccess && msg.MsgHdr.Rcode != dns.RcodeNameError {
+			return nil, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
+		}
+		if msg.MsgHdr.Rcode == dns.RcodeNameError {
+			log.Debugf("DNS name does not exist: %s", qname)
+			return nil, nil
+		}
+		if !msg.MsgHdr.AuthenticatedData && !msg.MsgHdr.Authoritative {
+			// For security reasons, we only trust records that are
+			// authenticated (e.g. server is Unbound and has verified
+			// DNSSEC sigs) or authoritative (e.g. server is ncdns and
+			// is the owner of the requested zone).
+			log.Debugf("DNS record not authenticated and not authoritative: %s", qname)
+			return nil, nil
+		}
+		return msg.Answer, nil
+	}
+
+	wildcardAnswer, err := queryName("*." + domain)
 	if err != nil {
-		// A DNS error occurred.
-		log.Debuge(err, "qlib error")
-		return nil, fmt.Errorf("qlib error: %w", err)
+		return nil, err
+	}
+	hostAnswer, err := queryName(domain)
+	if err != nil {
+		return nil, err
 	}
 
-	if result.ResponseMsg == nil {
-		// A DNS error occurred (nil response).
-		return nil, fmt.Errorf("qlib error: nil response")
-	}
+	// Merge answers. If both queries returned NXDOMAIN /
+	// unauthenticated, both slices are empty; the iteration below
+	// no-ops and we return (nil, nil) at the end (i.e. "no Namecoin
+	// TLS for this domain").
+	dnsResponse := &dns.Msg{}
+	dnsResponse.Answer = append(dnsResponse.Answer, wildcardAnswer...)
+	dnsResponse.Answer = append(dnsResponse.Answer, hostAnswer...)
 
-	dnsResponse := result.ResponseMsg
-	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
-		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		return nil, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
-	}
-
-	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
-		// Wildcard subdomain doesn't exist.
-		// That means the domain doesn't use Namecoin-form DANE.
-		// Return no cert.
-		log.Debugf("wildcard subdomain doesn't exist: %s", domain)
-		return nil, nil
-	}
-
-	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
-		// For security reasons, we only trust records that are
-		// authenticated (e.g. server is Unbound and has verified
-		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
-		// the owner of the requested zone).  If neither is the case,
-		// then return no cert.
-		log.Debugf("DNS record not authenticated and not authoritative: %s", domain)
+	if len(dnsResponse.Answer) == 0 {
+		log.Debugf("no TLSA records at %s or *.%s", domain, domain)
 		return nil, nil
 	}
 
@@ -596,15 +618,26 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 		return nil, false, nil
 	}
 
+	// Try each lookup path in order. The chosen path is logged at
+	// INFO so operators can diagnose "why does this domain work but
+	// that one not?" without needing -xlog.severity=DEBUG.
+	var matchedVia string
+
 	tlsa, err := s.lookupPi(req, domain)
 	if err != nil {
 		return nil, false, err
+	}
+	if tlsa != nil {
+		matchedVia = "lookupPi"
 	}
 
 	if tlsa == nil {
 		tlsa, err = s.lookupBlockchainMessage(req, domain)
 		if err != nil {
 			return nil, false, err
+		}
+		if tlsa != nil {
+			matchedVia = "lookupBlockchainMessage"
 		}
 	}
 
@@ -613,11 +646,16 @@ func (s *Server) lookupCert(req *http.Request) (certDer []byte, shortTerm bool, 
 		if err != nil {
 			return nil, false, err
 		}
+		if tlsa != nil {
+			matchedVia = "lookupDNS"
+		}
 	}
 
 	if tlsa == nil {
+		log.Infof("no TLSA found for %s (tried lookupPi, lookupBlockchainMessage, lookupDNS)", domain)
 		return nil, false, nil
 	}
+	log.Infof("TLSA matched for %s via %s", domain, matchedVia)
 
 	stapled := map[string]string{}
 
