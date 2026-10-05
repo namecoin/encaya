@@ -46,6 +46,31 @@ Option C: Using Makefile (non-Windows platforms):
 
 Encaya can be run as a Windows service; see the output of `encaya --help`.
 
+## Using the HTTP handlers from another server
+
+The `github.com/namecoin/encaya/handlers` package provides the same six endpoints
+without starting Encaya's standalone listeners or changing `http.DefaultServeMux`.
+Supply a DER-encoded root CA certificate, its private key, DNS lookup settings,
+and an existing Namecoin RPC client used for off-chain message verification:
+
+~~~go
+h, err := handlers.New(dnsAddress, dnsPort, "", rootDER, rootKey, namecoinClient)
+if err != nil {
+    return err
+}
+mux.HandleFunc("/", h.IndexHandler)
+mux.HandleFunc("/lookup", h.LookupHandler)
+mux.HandleFunc("/aia", h.AIAHandler)
+mux.HandleFunc("/get-new-negative-ca", h.GetNewNegativeCAHandler)
+mux.HandleFunc("/cross-sign-ca", h.CrossSignCAHandler)
+mux.HandleFunc("/original-from-serial", h.OriginalFromSerialHandler)
+~~~
+
+Use one `Handlers` instance for all six routes so they share certificate caches.
+The host owns its mux, listeners, and RPC client. With `encaya_pi`, set `configDir`
+to the directory containing `pi_key.pem`. The standalone `encaya` and `encayagen`
+commands retain their configuration options.
+
 ## Configuration
 
 Encaya uses a configuration file which is looked for at `../etc/encaya.conf`
