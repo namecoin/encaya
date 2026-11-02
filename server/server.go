@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -36,6 +37,11 @@ import (
 )
 
 var log, logPublic = xlog.New("encaya.server")
+
+var (
+	errQlibNilResponse     = errors.New("qlib error: nil response")
+	errQlibUnexpectedRcode = errors.New("qlib error: return code not Success or NXDOMAIN")
+)
 
 var Log = logPublic
 
@@ -389,12 +395,12 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 
 	stapledData := &verifystapled.StapledData{
 		MessageHeader: "Namecoin X.509 Stapled Certification: ",
-		PubType: "x509pub",
+		PubType:       "x509pub",
 
 		Domain: domain,
 
 		PubBase64: req.FormValue("pubb64"),
-		SigsJSON: req.FormValue("sigs"),
+		SigsJSON:  req.FormValue("sigs"),
 
 		NotAfter: req.FormValue("notafter"),
 	}
@@ -458,21 +464,23 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		qresult, qerr := qparams.Do(callArgs)
 		if qerr != nil {
 			log.Debuge(qerr, "qlib error")
+
 			return nil, fmt.Errorf("qlib error: %w", qerr)
 		}
+
 		if qresult.ResponseMsg == nil {
-			return nil, fmt.Errorf("qlib error: nil response")
+			return nil, errQlibNilResponse
 		}
 
 		msg := qresult.ResponseMsg
-		if msg.MsgHdr.Rcode != dns.RcodeSuccess && msg.MsgHdr.Rcode != dns.RcodeNameError {
-			return nil, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
+		if msg.Rcode != dns.RcodeSuccess && msg.Rcode != dns.RcodeNameError {
+			return nil, errQlibUnexpectedRcode
 		}
-		if msg.MsgHdr.Rcode == dns.RcodeNameError {
+		if msg.Rcode == dns.RcodeNameError {
 			log.Debugf("DNS name does not exist: %s", qname)
 			return nil, nil
 		}
-		if !msg.MsgHdr.AuthenticatedData && !msg.MsgHdr.Authoritative {
+		if !msg.AuthenticatedData && !msg.Authoritative {
 			// For security reasons, we only trust records that are
 			// authenticated (e.g. server is Unbound and has verified
 			// DNSSEC sigs) or authoritative (e.g. server is ncdns and
@@ -480,6 +488,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 			log.Debugf("DNS record not authenticated and not authoritative: %s", qname)
 			return nil, nil
 		}
+
 		return msg.Answer, nil
 	}
 
@@ -487,6 +496,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	if err != nil {
 		return nil, err
 	}
+
 	hostAnswer, err := queryName(domain)
 	if err != nil {
 		return nil, err
@@ -689,7 +699,7 @@ func (s *Server) writePemBundle(writer http.ResponseWriter, certs [][]byte) {
 
 		certPem := string(certPemBytes)
 
-		_, err := io.WriteString(writer, certPem + "\n\n")
+		_, err := io.WriteString(writer, certPem+"\n\n")
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
