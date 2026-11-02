@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -36,6 +37,11 @@ import (
 )
 
 var log, logPublic = xlog.New("encaya.server")
+
+var (
+	errQlibNilResponse     = errors.New("qlib error: nil response")
+	errQlibUnexpectedRcode = errors.New("qlib error: return code not Success or NXDOMAIN")
+)
 
 var Log = logPublic
 
@@ -389,12 +395,12 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 
 	stapledData := &verifystapled.StapledData{
 		MessageHeader: "Namecoin X.509 Stapled Certification: ",
-		PubType: "x509pub",
+		PubType:       "x509pub",
 
 		Domain: domain,
 
 		PubBase64: req.FormValue("pubb64"),
-		SigsJSON: req.FormValue("sigs"),
+		SigsJSON:  req.FormValue("sigs"),
 
 		NotAfter: req.FormValue("notafter"),
 	}
@@ -444,42 +450,70 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	}
 	// Set qtype to TLSA
 	args = append(args, "TLSA")
-	// Set qname to all protocols and all ports of requested hostname
-	args = append(args, "*."+domain)
 
-	result, err := qparams.Do(args)
+	// Modern Namecoin records sometimes publish `tls` at the host map
+	// level itself rather than nested under `_tcp/_443/`. ncdns then
+	// serves the TLSA at the bare host name, not at `_443._tcp.<host>`.
+	// We therefore query both `*.<domain>` (classic DANE wildcard form,
+	// covers any port/protocol) and `<domain>` (host-level form) and
+	// merge whatever Answer sections come back.
+	dnsQuery := func(qname string) ([]dns.RR, error) {
+		callArgs := append([]string{}, args...)
+		callArgs = append(callArgs, qname)
+
+		qresult, qerr := qparams.Do(callArgs)
+		if qerr != nil {
+			log.Debuge(qerr, "qlib error")
+
+			return nil, fmt.Errorf("qlib error: %w", qerr)
+		}
+
+		if qresult.ResponseMsg == nil {
+			return nil, errQlibNilResponse
+		}
+
+		msg := qresult.ResponseMsg
+		if msg.Rcode != dns.RcodeSuccess && msg.Rcode != dns.RcodeNameError {
+			return nil, errQlibUnexpectedRcode
+		}
+
+		if msg.Rcode == dns.RcodeNameError {
+			log.Debugf("DNS name does not exist: %s", qname)
+			return nil, nil
+		}
+
+		if !msg.AuthenticatedData && !msg.Authoritative {
+			// For security reasons, we only trust records that are
+			// authenticated (e.g. server is Unbound and has verified
+			// DNSSEC sigs) or authoritative (e.g. server is ncdns and
+			// is the owner of the requested zone).
+			log.Debugf("DNS record not authenticated and not authoritative: %s", qname)
+			return nil, nil
+		}
+
+		return msg.Answer, nil
+	}
+
+	wildcardAnswer, err := dnsQuery("*." + domain)
 	if err != nil {
-		// A DNS error occurred.
-		log.Debuge(err, "qlib error")
-		return nil, fmt.Errorf("qlib error: %w", err)
+		return nil, err
 	}
 
-	if result.ResponseMsg == nil {
-		// A DNS error occurred (nil response).
-		return nil, fmt.Errorf("qlib error: nil response")
+	hostAnswer, err := dnsQuery(domain)
+	if err != nil {
+		return nil, err
 	}
 
-	dnsResponse := result.ResponseMsg
-	if dnsResponse.MsgHdr.Rcode != dns.RcodeSuccess && dnsResponse.MsgHdr.Rcode != dns.RcodeNameError {
-		// A DNS error occurred (return code wasn't Success or NXDOMAIN).
-		return nil, fmt.Errorf("qlib error: return code not Success or NXDOMAIN")
-	}
+	// Merge answers. If both queries returned NXDOMAIN / unauthenticated,
+	// both slices will be empty; the iteration below will no-op and we
+	// return (nil, nil) at the end (i.e. "no Namecoin TLS for this
+	// domain").
+	dnsResponse := &dns.Msg{}
+	dnsResponse.Answer = append(dnsResponse.Answer, wildcardAnswer...)
+	dnsResponse.Answer = append(dnsResponse.Answer, hostAnswer...)
 
-	if dnsResponse.MsgHdr.Rcode == dns.RcodeNameError {
-		// Wildcard subdomain doesn't exist.
-		// That means the domain doesn't use Namecoin-form DANE.
-		// Return no cert.
-		log.Debugf("wildcard subdomain doesn't exist: %s", domain)
-		return nil, nil
-	}
-
-	if !dnsResponse.MsgHdr.AuthenticatedData && !dnsResponse.MsgHdr.Authoritative {
-		// For security reasons, we only trust records that are
-		// authenticated (e.g. server is Unbound and has verified
-		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
-		// the owner of the requested zone).  If neither is the case,
-		// then return no cert.
-		log.Debugf("DNS record not authenticated and not authoritative: %s", domain)
+	if len(dnsResponse.Answer) == 0 {
+		log.Debugf("no TLSA records at %s or *.%s", domain, domain)
 		return nil, nil
 	}
 
@@ -651,7 +685,7 @@ func (s *Server) writePemBundle(writer http.ResponseWriter, certs [][]byte) {
 
 		certPem := string(certPemBytes)
 
-		_, err := io.WriteString(writer, certPem + "\n\n")
+		_, err := io.WriteString(writer, certPem+"\n\n")
 		if err != nil {
 			log.Debuge(err, "write error")
 		}
