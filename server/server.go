@@ -25,19 +25,17 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/hlandau/xlog"
 	"github.com/miekg/dns"
 
 	"github.com/namecoin/crosssign"
+	"github.com/namecoin/encaya/logconfig"
 	"github.com/namecoin/encaya/verifystapled"
 	"github.com/namecoin/ncrpcclient"
 	"github.com/namecoin/qlib"
 	"github.com/namecoin/safetlsa"
 )
 
-var log, logPublic = xlog.New("encaya.server")
-
-var Log = logPublic
+var log = logconfig.New("encaya.server")
 
 type cachedCert struct {
 	expiration time.Time
@@ -166,7 +164,7 @@ func (srv *Server) initCerts() {
 
 	srv.rootCertPem, err = os.ReadFile(srv.cfg.RootCert)
 	if err != nil {
-		log.Fatalef(err, "Unable to read %s", srv.cfg.RootCert)
+		log.Fatal().Err(err).Msgf("Unable to read %s", srv.cfg.RootCert)
 	}
 
 	srv.rootCertPemString = string(srv.rootCertPem)
@@ -174,7 +172,7 @@ func (srv *Server) initCerts() {
 	rootCertBlock, _ := pem.Decode(srv.rootCertPem)
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
 	if rootCertBlock == nil {
-		log.Fatalef(err, "Unable to decode %s", srv.cfg.RootCert)
+		log.Fatal().Err(err).Msgf("Unable to decode %s", srv.cfg.RootCert)
 	}
 
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
@@ -182,13 +180,13 @@ func (srv *Server) initCerts() {
 
 	srv.rootPrivPem, err = os.ReadFile(srv.cfg.RootKey)
 	if err != nil {
-		log.Fatalef(err, "Unable to read %s", srv.cfg.RootKey)
+		log.Fatal().Err(err).Msgf("Unable to read %s", srv.cfg.RootKey)
 	}
 
 	rootPrivBlock, _ := pem.Decode(srv.rootPrivPem)
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
 	if rootPrivBlock == nil {
-		log.Fatalef(err, "Unable to decode %s", srv.cfg.RootKey)
+		log.Fatal().Err(err).Msgf("Unable to decode %s", srv.cfg.RootKey)
 	}
 
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
@@ -196,12 +194,12 @@ func (srv *Server) initCerts() {
 
 	srv.rootPriv, err = x509.ParsePKCS8PrivateKey(rootPrivBytes)
 	if err != nil {
-		log.Fatalef(err, "Unable to parse %s", srv.cfg.RootKey)
+		log.Fatal().Err(err).Msgf("Unable to parse %s", srv.cfg.RootKey)
 	}
 
 	srv.tldCert, srv.tldPriv, err = safetlsa.GenerateTLDCA("bit", srv.rootCert, srv.rootPriv)
 	if err != nil {
-		log.Fatale(err, "Couldn't generate TLD CA")
+		log.Fatal().Err(err).Msg("Couldn't generate TLD CA")
 	}
 
 	srv.tldCertPem = pem.EncodeToMemory(&pem.Block{
@@ -215,7 +213,7 @@ func (s *Server) Start() error {
 	go s.doRunListenerTCP()
 	go s.doRunListenerTLS()
 
-	log.Info("Listeners started")
+	log.Info().Msg("Listeners started")
 
 	return nil
 }
@@ -233,7 +231,9 @@ func (s *Server) doRunListenerTCP() {
 	}
 
 	err := tcpSrv.Serve(s.tcpListener)
-	log.Fatale(err)
+	if err != nil {
+		log.Fatal().Err(err).Msg("")
+	}
 }
 
 func (s *Server) doRunListenerTLS() {
@@ -243,7 +243,9 @@ func (s *Server) doRunListenerTLS() {
 	}
 
 	err := tlsSrv.ServeTLS(s.tlsListener, s.cfg.ListenChain, s.cfg.ListenKey)
-	log.Fatale(err)
+	if err != nil {
+		log.Fatal().Err(err).Msg("")
+	}
 }
 
 func (s *Server) getCachedDomainCerts(commonName string) ([][]byte, bool) {
@@ -380,12 +382,12 @@ func (s *Server) indexHandler(writer http.ResponseWriter, req *http.Request) {
 
 	_, err := io.WriteString(writer, indexMessage)
 	if err != nil {
-		log.Debuge(err, "write error")
+		log.Debug().Err(err).Msg("write error")
 	}
 }
 
 func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
-	log.Debugf("querying for pubkey via off-chain message: %s", domain)
+	log.Debug().Msgf("querying for pubkey via off-chain message: %s", domain)
 
 	stapledData := &verifystapled.StapledData{
 		MessageHeader: "Namecoin X.509 Stapled Certification: ",
@@ -412,7 +414,7 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 	// We use RawURLEncoding because it results in compact, readable URL's.
 	pubBytes, err := base64.RawURLEncoding.DecodeString(stapledData.PubBase64)
 	if err != nil {
-		log.Debugf("stapled public key is invalid base64: %s", domain)
+		log.Debug().Msgf("stapled public key is invalid base64: %s", domain)
 		return nil, nil
 	}
 
@@ -429,7 +431,7 @@ func (s *Server) lookupBlockchainMessage(req *http.Request, domain string) (tlsa
 }
 
 func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
-	log.Debugf("querying for pubkey via DNS: %s", domain)
+	log.Debug().Msgf("querying for pubkey via DNS: %s", domain)
 
 	qparams := qlib.DefaultParams()
 	qparams.Port = s.cfg.DNSPort
@@ -450,7 +452,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	result, err := qparams.Do(args)
 	if err != nil {
 		// A DNS error occurred.
-		log.Debuge(err, "qlib error")
+		log.Debug().Err(err).Msg("qlib error")
 		return nil, fmt.Errorf("qlib error: %w", err)
 	}
 
@@ -469,7 +471,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		// Wildcard subdomain doesn't exist.
 		// That means the domain doesn't use Namecoin-form DANE.
 		// Return no cert.
-		log.Debugf("wildcard subdomain doesn't exist: %s", domain)
+		log.Debug().Msgf("wildcard subdomain doesn't exist: %s", domain)
 		return nil, nil
 	}
 
@@ -479,7 +481,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 		// DNSSEC sigs) or authoritative (e.g. server is ncdns and is
 		// the owner of the requested zone).  If neither is the case,
 		// then return no cert.
-		log.Debugf("DNS record not authenticated and not authoritative: %s", domain)
+		log.Debug().Msgf("DNS record not authenticated and not authoritative: %s", domain)
 		return nil, nil
 	}
 
@@ -488,7 +490,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	pubSHA256, err := hex.DecodeString(pubSHA256Hex)
 	if err != nil {
 		// Requested public key hash is malformed.
-		log.Debugf("stapled public key hash is invalid hex: %s", domain)
+		log.Debug().Msgf("stapled public key hash is invalid hex: %s", domain)
 		return nil, nil
 	}
 
@@ -498,7 +500,7 @@ func (s *Server) lookupDNS(req *http.Request, domain string) (tlsa *dns.TLSA, er
 	pubBytes, err := base64.RawURLEncoding.DecodeString(pubBase64)
 	if err != nil {
 		// Requested public key is malformed.
-		log.Debugf("stapled public key is invalid base64: %s", domain)
+		log.Debug().Msgf("stapled public key is invalid base64: %s", domain)
 		return nil, nil
 	}
 
@@ -653,7 +655,7 @@ func (s *Server) writePemBundle(writer http.ResponseWriter, certs [][]byte) {
 
 		_, err := io.WriteString(writer, certPem + "\n\n")
 		if err != nil {
-			log.Debuge(err, "write error")
+			log.Debug().Err(err).Msg("write error")
 		}
 	}
 }
@@ -663,7 +665,7 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 
 	commonName := req.FormValue("domain")
 
-	log.Debugf("PEM lookup: %s", commonName)
+	log.Debug().Msgf("PEM lookup: %s", commonName)
 
 	resultCerts := [][]byte{}
 
@@ -671,7 +673,7 @@ func (s *Server) lookupHandler(writer http.ResponseWriter, req *http.Request) {
 	if needRefresh {
 		requestedCert, _, err := s.lookupCert(req)
 		if err != nil {
-			log.Debuge(err, "cert lookup error")
+			log.Debug().Err(err).Msg("cert lookup error")
 			writer.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -711,11 +713,11 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 
 	commonName := req.FormValue("domain")
 
-	log.Debugf("DER lookup: %s", commonName)
+	log.Debug().Msgf("DER lookup: %s", commonName)
 
 	requestedCert, shortTerm, err := s.lookupCert(req)
 	if err != nil {
-		log.Debuge(err, "cert lookup error")
+		log.Debug().Err(err).Msg("cert lookup error")
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -736,14 +738,14 @@ func (s *Server) aiaHandler(writer http.ResponseWriter, req *http.Request) {
 
 	_, err = io.WriteString(writer, string(requestedCert))
 	if err != nil {
-		log.Debuge(err, "write error")
+		log.Debug().Err(err).Msg("write error")
 	}
 }
 
 func (s *Server) getNewNegativeCAHandler(writer http.ResponseWriter, req *http.Request) {
 	restrictCert, restrictPriv, err := safetlsa.GenerateTLDExclusionCA("bit", s.rootCert, s.rootPriv)
 	if err != nil {
-		log.Debuge(err, "Error generating TLD exclusion CA")
+		log.Debug().Err(err).Msg("Error generating TLD exclusion CA")
 	}
 
 	restrictCertPem := pem.EncodeToMemory(&pem.Block{
@@ -754,7 +756,7 @@ func (s *Server) getNewNegativeCAHandler(writer http.ResponseWriter, req *http.R
 
 	restrictPrivBytes, err := x509.MarshalECPrivateKey(restrictPriv.(*ecdsa.PrivateKey))
 	if err != nil {
-		log.Debuge(err, "Unable to marshal ECDSA private key")
+		log.Debug().Err(err).Msg("Unable to marshal ECDSA private key")
 	}
 
 	restrictPrivPem := pem.EncodeToMemory(&pem.Block{
@@ -765,17 +767,17 @@ func (s *Server) getNewNegativeCAHandler(writer http.ResponseWriter, req *http.R
 
 	_, err = io.WriteString(writer, restrictCertPemString)
 	if err != nil {
-		log.Debuge(err, "write error")
+		log.Debug().Err(err).Msg("write error")
 	}
 
 	_, err = io.WriteString(writer, "\n\n")
 	if err != nil {
-		log.Debuge(err, "write error")
+		log.Debug().Err(err).Msg("write error")
 	}
 
 	_, err = io.WriteString(writer, restrictPrivPemString)
 	if err != nil {
-		log.Debuge(err, "write error")
+		log.Debug().Err(err).Msg("write error")
 	}
 }
 
@@ -802,14 +804,14 @@ func (s *Server) crossSignCAHandler(writer http.ResponseWriter, req *http.Reques
 
 	signerKey, err := x509.ParseECPrivateKey(signerKeyBlock.Bytes)
 	if err != nil {
-		log.Debuge(err, "Unable to parse ECDSA private key")
+		log.Debug().Err(err).Msg("Unable to parse ECDSA private key")
 
 		return
 	}
 
 	resultBytes, err := crosssign.CrossSign(toSignBlock.Bytes, signerCertBlock.Bytes, signerKey)
 	if err != nil {
-		log.Debuge(err, "Unable to cross-sign")
+		log.Debug().Err(err).Msg("Unable to cross-sign")
 
 		return
 	}
@@ -822,12 +824,12 @@ func (s *Server) crossSignCAHandler(writer http.ResponseWriter, req *http.Reques
 
 	resultParsed, err := x509.ParseCertificate(resultBytes)
 	if err != nil {
-		log.Debuge(err, "Unable to extract serial number from cross-signed CA")
+		log.Debug().Err(err).Msg("Unable to extract serial number from cross-signed CA")
 	}
 
 	_, err = io.WriteString(writer, resultPEMString)
 	if err != nil {
-		log.Debuge(err, "write error")
+		log.Debug().Err(err).Msg("write error")
 	}
 
 	s.cacheNegativeCert(cacheKey, resultBytes)
@@ -858,12 +860,12 @@ func GenerateCerts(cfg *Config) {
 
 	srv.rootCert, srv.rootPriv, err = safetlsa.GenerateRootCA("Namecoin")
 	if err != nil {
-		log.Fatale(err, "Couldn't generate root CA")
+		log.Fatal().Err(err).Msg("Couldn't generate root CA")
 	}
 
 	rootPrivBytes, err := x509.MarshalPKCS8PrivateKey(srv.rootPriv)
 	if err != nil {
-		log.Fatale(err, "Unable to marshal private key")
+		log.Fatal().Err(err).Msg("Unable to marshal private key")
 	}
 
 	srv.rootCertPem = pem.EncodeToMemory(&pem.Block{
@@ -879,7 +881,7 @@ func GenerateCerts(cfg *Config) {
 
 	srv.tldCert, srv.tldPriv, err = safetlsa.GenerateTLDCA("bit", srv.rootCert, srv.rootPriv)
 	if err != nil {
-		log.Fatale(err, "Couldn't generate TLD CA")
+		log.Fatal().Err(err).Msg("Couldn't generate TLD CA")
 	}
 
 	srv.tldCertPem = pem.EncodeToMemory(&pem.Block{
@@ -892,17 +894,17 @@ func GenerateCerts(cfg *Config) {
 
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		log.Fatale(err, "Unable to generate serial number")
+		log.Fatal().Err(err).Msg("Unable to generate serial number")
 	}
 
 	listenPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		log.Fatale(err, "Unable to generate listening key")
+		log.Fatal().Err(err).Msg("Unable to generate listening key")
 	}
 
 	listenPrivBytes, err := x509.MarshalPKCS8PrivateKey(listenPriv)
 	if err != nil {
-		log.Fatale(err, "Unable to marshal private key")
+		log.Fatal().Err(err).Msg("Unable to marshal private key")
 	}
 
 	listenTemplate := x509.Certificate{
@@ -923,13 +925,13 @@ func GenerateCerts(cfg *Config) {
 
 	tldCertParsed, err := x509.ParseCertificate(srv.tldCert)
 	if err != nil {
-		log.Fatale(err, "Unable to parse TLD cert")
+		log.Fatal().Err(err).Msg("Unable to parse TLD cert")
 	}
 
 	listenCert, err := x509.CreateCertificate(rand.Reader, &listenTemplate,
 		tldCertParsed, &listenPriv.PublicKey, srv.tldPriv)
 	if err != nil {
-		log.Fatale(err, "Unable to create listening cert")
+		log.Fatal().Err(err).Msg("Unable to create listening cert")
 	}
 
 	listenCertPem = pem.EncodeToMemory(&pem.Block{
@@ -945,12 +947,12 @@ func GenerateCerts(cfg *Config) {
 
 	err = os.WriteFile(srv.cfg.RootCert, srv.rootCertPem, 0600)
 	if err != nil {
-		log.Fatalef(err, "Unable to write %s", srv.cfg.RootCert)
+		log.Fatal().Err(err).Msgf("Unable to write %s", srv.cfg.RootCert)
 	}
 
 	err = os.WriteFile(srv.cfg.RootKey, srv.rootPrivPem, 0600)
 	if err != nil {
-		log.Fatalef(err, "Unable to write %s", srv.cfg.RootKey)
+		log.Fatal().Err(err).Msgf("Unable to write %s", srv.cfg.RootKey)
 	}
 
 	listenChainPemString := listenCertPemString + "\n\n" + srv.tldCertPemString + "\n\n" + srv.rootCertPemString
@@ -958,11 +960,11 @@ func GenerateCerts(cfg *Config) {
 
 	err = os.WriteFile(srv.cfg.ListenChain, listenChainPem, 0600)
 	if err != nil {
-		log.Fatalef(err, "Unable to write %s", srv.cfg.ListenChain)
+		log.Fatal().Err(err).Msgf("Unable to write %s", srv.cfg.ListenChain)
 	}
 
 	err = os.WriteFile(srv.cfg.ListenKey, listenPrivPem, 0600)
 	if err != nil {
-		log.Fatalef(err, "Unable to write %s", srv.cfg.ListenKey)
+		log.Fatal().Err(err).Msgf("Unable to write %s", srv.cfg.ListenKey)
 	}
 }
