@@ -559,9 +559,9 @@ echo "Start local HTTPS server with expired leaf certificate"
 start_https_server "$EXPIRED_LEAF_CERT" "$EXPIRED_LEAF_KEY" "Expired-cert HTTPS server failed to start"
 
 echo "Run Chromium headless and verify expired cert is rejected"
-expired_chromium_output=$(chromium_fetch_dom_impl "$TEST_TMPDIR/chrome-profile-expired" "$TEST_TMPDIR/chrome-expired.log" "$HASHED_DOMAIN" "https://$HASHED_DOMAIN:$HTTPS_SERVER_PORT/index.html" || true)
-if [[ "$expired_chromium_output" != *"Your connection is not private"* ]]; then
-    echo "$expired_chromium_output"
+chromium_fetch_dom_impl "$TEST_TMPDIR/chrome-profile-expired" "$TEST_TMPDIR/chrome-expired.log" "$HASHED_DOMAIN" "https://$HASHED_DOMAIN:$HTTPS_SERVER_PORT/index.html" || true
+if ! grep -q "ERR_CERT_DATE_INVALID" "$TEST_TMPDIR/chrome-expired.log"; then
+    cat "$TEST_TMPDIR/chrome-expired.log"
     fail_test "Chromium did not reject expired certificate"
 fi
 
