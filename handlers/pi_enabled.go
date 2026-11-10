@@ -1,7 +1,7 @@
 //go:build encaya_pi
 // +build encaya_pi
 
-package server
+package handlers
 
 import (
 	"crypto/ecdsa"
@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -19,8 +20,8 @@ import (
 
 var piPriv interface{}
 
-func (s *Server) loadPiKey() {
-	piPrivPath := s.cfg.cpath("pi_key.pem")
+func (s *Handlers) loadPiKey() {
+	piPrivPath := filepath.Join(s.configDir, "pi_key.pem")
 
 	piPrivPem, err := os.ReadFile(piPrivPath)
 	if err != nil {
@@ -42,7 +43,7 @@ func (s *Server) loadPiKey() {
 	}
 }
 
-func (s *Server) lookupPi(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
+func (s *Handlers) lookupPi(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
 	// Pi meta-domains are of the form INTEGER.pi.x--nmc.bit
 	metaSuffix := ".pi.x--nmc.bit"
 	if !strings.HasSuffix(domain, metaSuffix) {
