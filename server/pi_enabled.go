@@ -24,13 +24,13 @@ func (s *Server) loadPiKey() {
 
 	piPrivPem, err := os.ReadFile(piPrivPath)
 	if err != nil {
-		log.Fatalef(err, "Unable to read %s", piPrivPath)
+		log.Fatal().Err(err).Msgf("Unable to read %s", piPrivPath)
 	}
 
 	piPrivBlock, _ := pem.Decode(piPrivPem)
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
 	if piPrivBlock == nil {
-		log.Fatalef(err, "Unable to decode %s", piPrivPath)
+		log.Fatal().Err(err).Msgf("Unable to decode %s", piPrivPath)
 	}
 
 	//nolint:staticcheck // SA5011 Unreachable if nil due to log.Fatal
@@ -38,7 +38,7 @@ func (s *Server) loadPiKey() {
 
 	piPriv, err = x509.ParsePKCS8PrivateKey(piPrivBytes)
 	if err != nil {
-		log.Fatalef(err, "Unable to parse %s", piPrivPath)
+		log.Fatal().Err(err).Msgf("Unable to parse %s", piPrivPath)
 	}
 }
 

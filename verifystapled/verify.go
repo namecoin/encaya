@@ -6,15 +6,13 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/hlandau/xlog"
 
+	"github.com/namecoin/encaya/logconfig"
 	"github.com/namecoin/ncbtcjson"
 	"github.com/namecoin/ncrpcclient"
 )
 
-var log, logPublic = xlog.New("encaya.verifystapled")
-
-var Log = logPublic
+var log = logconfig.New("encaya.verifystapled")
 
 type StapledData struct {
 	// To avoid cross-protocol attacks
@@ -44,12 +42,12 @@ func (sd *StapledData) Verify(namecoin *ncrpcclient.Client) (ok bool, err error)
 	}
 
 	if sd.PubBase64 == "" {
-		log.Debugf("empty stapled public key: %s", sd.Domain)
+		log.Debug().Msgf("empty stapled public key: %s", sd.Domain)
 		return false, nil
 	}
 
 	if sd.SigsJSON == "" {
-		log.Debugf("empty stapled signature list: %s", sd.Domain)
+		log.Debug().Msgf("empty stapled signature list: %s", sd.Domain)
 		return false, nil
 	}
 
@@ -61,7 +59,7 @@ func (sd *StapledData) Verify(namecoin *ncrpcclient.Client) (ok bool, err error)
 	} else if strings.HasSuffix(sd.Domain, ".bit.onion") {
 		blockchainName = strings.TrimSuffix(sd.Domain, ".bit.onion")
 	} else {
-		log.Debugf("eTLD doesn't support blockchain messages: %s", sd.Domain)
+		log.Debug().Msgf("eTLD doesn't support blockchain messages: %s", sd.Domain)
 		return false, nil
 	}
 
@@ -76,7 +74,7 @@ func (sd *StapledData) Verify(namecoin *ncrpcclient.Client) (ok bool, err error)
 
 	err = json.Unmarshal([]byte(sd.SigsJSON), &sigs)
 	if err != nil {
-		log.Debugf("failed to Unmarshal blockchain message sigs for %s: %s", sd.Domain, err)
+		log.Debug().Msgf("failed to Unmarshal blockchain message sigs for %s: %s", sd.Domain, err)
 		return false, nil
 	}
 
@@ -87,14 +85,14 @@ func (sd *StapledData) Verify(namecoin *ncrpcclient.Client) (ok bool, err error)
 			if jerr.Code == btcjson.ErrRPCWallet {
 				// ErrRPCWallet from name_show indicates that
 				// the name does not exist.
-				log.Debugf("name does not exist on blockchain: %s", sd.Domain)
+				log.Debug().Msgf("name does not exist on blockchain: %s", sd.Domain)
 				return false, nil
 			}
 		}
 
 		// Some error besides NXDOMAIN happened; pass that error
 		// through unaltered.
-		log.Debugf("blockchain query failed for %s: %s", sd.Domain, err)
+		log.Debug().Msgf("blockchain query failed for %s: %s", sd.Domain, err)
 		return false, err
 	}
 
@@ -103,12 +101,12 @@ func (sd *StapledData) Verify(namecoin *ncrpcclient.Client) (ok bool, err error)
 	for _, sig := range sigs {
 		sigAddress, ok := sig["blockchainaddress"]
 		if !ok {
-			log.Debugf("stapled signature does not contain address: %s", sd.Domain)
+			log.Debug().Msgf("stapled signature does not contain address: %s", sd.Domain)
 			continue
 		}
 
 		if sigAddress != nameAddress {
-			log.Debugf("stapled signature's address %s is not the current name owner %s: %s", sigAddress, nameAddress, sd.Domain)
+			log.Debug().Msgf("stapled signature's address %s is not the current name owner %s: %s", sigAddress, nameAddress, sd.Domain)
 			continue
 		}
 
@@ -123,7 +121,7 @@ func (sd *StapledData) Verify(namecoin *ncrpcclient.Client) (ok bool, err error)
 		if sd.NotAfter != "" {
 			messageData["notafter"] = sd.NotAfter
 		} else {
-			log.Debugf("stapled notafter field missing: %s", sd.Domain)
+			log.Debug().Msgf("stapled notafter field missing: %s", sd.Domain)
 		}
 
 		messageDataBytes, err := json.Marshal(messageData)
@@ -135,17 +133,17 @@ func (sd *StapledData) Verify(namecoin *ncrpcclient.Client) (ok bool, err error)
 
 		sigSig, ok := sig["blockchainsig"]
 		if !ok {
-			log.Debugf("stapled signature does not contain signature: %s", sd.Domain)
+			log.Debug().Msgf("stapled signature does not contain signature: %s", sd.Domain)
 			continue
 		}
 
 		verifyResult, err := namecoin.VerifyMessage(addressDecoded, sigSig, messageStr)
 		if err != nil {
-			log.Debugf("blockchain message signature verification failed for %s: %s", sd.Domain, err)
+			log.Debug().Msgf("blockchain message signature verification failed for %s: %s", sd.Domain, err)
 			continue
 		}
 		if !verifyResult {
-			log.Debugf("blockchain message signature verification returned false: %s", sd.Domain)
+			log.Debug().Msgf("blockchain message signature verification returned false: %s", sd.Domain)
 			continue
 		}
 
@@ -154,6 +152,6 @@ func (sd *StapledData) Verify(namecoin *ncrpcclient.Client) (ok bool, err error)
 	}
 
 	// No sigs matched. Return no cert.
-	log.Debugf("off-chain message list exhausted: %s", sd.Domain)
+	log.Debug().Msgf("off-chain message list exhausted: %s", sd.Domain)
 	return false, nil
 }
