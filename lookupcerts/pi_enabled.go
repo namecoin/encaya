@@ -1,14 +1,13 @@
 //go:build encaya_pi
 // +build encaya_pi
 
-package handlers
+package lookupcerts
 
 import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,7 +19,7 @@ import (
 
 var piPriv interface{}
 
-func (s *Handlers) loadPiKey() {
+func (s *Lookup) loadPiKey() {
 	piPrivPath := filepath.Join(s.configDir, "pi_key.pem")
 
 	piPrivPem, err := os.ReadFile(piPrivPath)
@@ -43,7 +42,7 @@ func (s *Handlers) loadPiKey() {
 	}
 }
 
-func (s *Handlers) lookupPi(req *http.Request, domain string) (tlsa *dns.TLSA, err error) {
+func (s *Lookup) lookupPi(domain, purportedDigits string) (tlsa *dns.TLSA, err error) {
 	// Pi meta-domains are of the form INTEGER.pi.x--nmc.bit
 	metaSuffix := ".pi.x--nmc.bit"
 	if !strings.HasSuffix(domain, metaSuffix) {
@@ -56,8 +55,6 @@ func (s *Handlers) lookupPi(req *http.Request, domain string) (tlsa *dns.TLSA, e
 	if err != nil {
 		return nil, nil
 	}
-
-	purportedDigits := req.FormValue("pidigits")
 
 	actualDigits := pi.Digits(digitCount)
 
