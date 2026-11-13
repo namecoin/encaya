@@ -43,12 +43,12 @@ type Handlers struct {
 }
 
 func New(dnsAddress string, dnsPort int, configDir string, rootCert []byte, rootKey interface{},
-	namecoinConn *ncrpcclient.Client) (*Handlers, error) {
+	namecoinConn *ncrpcclient.Client, useNcdnsCache bool) (*Handlers, error) {
 	h := &Handlers{}
 	h.rootCert = rootCert
 	h.rootPriv = rootKey
 	var err error
-	h.lookup, err = lookupcerts.New(dnsAddress, dnsPort, configDir, rootCert, rootKey, namecoinConn)
+	h.lookup, err = lookupcerts.New(dnsAddress, dnsPort, configDir, rootCert, rootKey, namecoinConn, useNcdnsCache)
 	if err != nil {
 		return nil, err
 	}

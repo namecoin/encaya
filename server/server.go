@@ -47,14 +47,17 @@ type Server struct {
 
 //nolint:lll
 type Config struct {
-	DNSAddress string `default:"" usage:"Use this DNS server for DNS lookups.  (If left empty, the system resolver will be used.)"`
-	DNSPort    int    `default:"53" usage:"Use this port for DNS lookups."`
 	ListenIP   string `default:"127.127.127.127" usage:"Listen on this IP address."`
 
 	RootCert    string `default:"root_cert.pem" usage:"Sign with this root CA certificate."`
 	RootKey     string `default:"root_key.pem" usage:"Sign with this root CA private key."`
 	ListenChain string `default:"listen_chain.pem" usage:"Listen with this TLS certificate chain."`
 	ListenKey   string `default:"listen_key.pem" usage:"Listen with this TLS private key."`
+
+	UseNcdnsCache bool `default:"false" usage:"Use ncdns PKI cache instead of issuing DNS lookups. Improves performance and privacy, but incompatible with non-Namecoin domains."`
+
+	DNSAddress string `default:"" usage:"Use this DNS server for DNS lookups.  (If left empty, the system resolver will be used.)"`
+	DNSPort    int    `default:"53" usage:"Use this port for DNS lookups."`
 
 	NamecoinRPCUsername   string `default:"" usage:"Namecoin RPC username"`
 	NamecoinRPCPassword   string `default:"" usage:"Namecoin RPC password"`
@@ -120,7 +123,7 @@ func New(cfg *Config) (*Server, error) {
 		return nil, err
 	}
 
-	h, err := handlers.New(srv.cfg.DNSAddress, srv.cfg.DNSPort, srv.cfg.ConfigDir, srv.rootCert, srv.rootPriv, srv.namecoin)
+	h, err := handlers.New(srv.cfg.DNSAddress, srv.cfg.DNSPort, srv.cfg.ConfigDir, srv.rootCert, srv.rootPriv, srv.namecoin, cfg.UseNcdnsCache)
 	if err != nil {
 		log.Fatale(err, "Couldn't generate TLD CA")
 	}
