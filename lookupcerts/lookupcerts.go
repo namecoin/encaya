@@ -162,7 +162,8 @@ func (s *Lookup) lookupBlockchainMessage(domain, pubB64, sigs, notAfter string) 
 func fillInTLSAPreimage(tlsa *dns.TLSA, pubSHA256, pubBytes []byte) *dns.TLSA {
 	// DANE-TA, public key; unspecified hash
 	if tlsa.Usage == 2 && tlsa.Selector == 1 {
-		if tlsa.MatchingType == 0 { // Not hashed
+		switch tlsa.MatchingType {
+		case 0: // Not hashed
 			tlsaPubBytes, err := hex.DecodeString(tlsa.Certificate)
 			if err != nil {
 				// TLSA record is malformed
@@ -184,7 +185,7 @@ func fillInTLSAPreimage(tlsa *dns.TLSA, pubSHA256, pubBytes []byte) *dns.TLSA {
 				// TLSA record doesn't match requested public key hash
 				return nil
 			}
-		} else if tlsa.MatchingType == 1 { // SHA-256
+		case 1: // SHA-256
 			tlsaPubSHA256, err := hex.DecodeString(tlsa.Certificate)
 			if err != nil {
 				// TLSA record is malformed
@@ -199,7 +200,7 @@ func fillInTLSAPreimage(tlsa *dns.TLSA, pubSHA256, pubBytes []byte) *dns.TLSA {
 			// Fill in verified preimage into TLSA record
 			tlsa.MatchingType = 0
 			tlsa.Certificate = hex.EncodeToString(pubBytes)
-		} else if tlsa.MatchingType == 2 { // SHA-512
+		case 2: // SHA-512
 			tlsaPubSHA512, err := hex.DecodeString(tlsa.Certificate)
 			if err != nil {
 				// TLSA record is malformed
