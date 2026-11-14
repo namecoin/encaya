@@ -225,12 +225,11 @@ func (s *Handlers) RevokedHandler(writer http.ResponseWriter, req *http.Request)
 	writer.Header().Set("Content-Type", "application/json")
 
 	commonName := req.FormValue("domain")
-	subjectHashHex := req.FormValue("subsha256")
-	serialHashHex := req.FormValue("sersha256")
+	serialHex := req.FormValue("serhex")
 
-	log.Debugf("Revocation lookup: %s, subject hash %s, serial hash %s", commonName, subjectHashHex, serialHashHex)
+	log.Debugf("Revocation lookup: %s, serial %s", commonName, serialHex)
 
-	revoked, err := s.lookup.IsRevoked(commonName, subjectHashHex, serialHashHex)
+	revoked, err := s.lookup.IsRevoked(commonName, serialHex)
 	if err != nil {
 		log.Debuge(err, "revocation lookup error")
 		writer.WriteHeader(http.StatusInternalServerError)
