@@ -89,8 +89,8 @@ github.com/namecoin/crosssign v0.0.4 h1:6MhoTbuFKLlb6Sytw3OW7Y35QdjPtJwpAsqoA9DF
 github.com/namecoin/crosssign v0.0.4/go.mod h1:pKq68ECXpvCgWPlh/aTJB1Og+Z3c4RMd5vp5VMLI7xM=
 github.com/namecoin/ncbtcjson v0.1.0 h1:N0A5tFpS82gQNDr8FoQwWPPuNeY0iZIJFYTb7udyEB8=
 github.com/namecoin/ncbtcjson v0.1.0/go.mod h1:qSA7Td0v4e3gXoWvszuJjzqJSie9XhH2lwLPMLmhkfY=
-github.com/namecoin/ncdns v0.3.3-0.20261112233535-1dfb2b4fb2f5 h1:QQD6UGjfL9zZooae9Wc0zwbRa4ukvqY0+sX50RRED5w=
-github.com/namecoin/ncdns v0.3.3-0.20261112233535-1dfb2b4fb2f5/go.mod h1:unbaQSCuLNSvSjbgJ7AqJzlZEaM+hA2FAEtAs1wMRoI=
+github.com/namecoin/ncdns v0.3.3-0.20261114014054-74ef29d2f18d h1:delP+QyJVsoVJ+NaWrHhZFhhcuu/ZARUZRG3jZ3Wrig=
+github.com/namecoin/ncdns v0.3.3-0.20261114014054-74ef29d2f18d/go.mod h1:unbaQSCuLNSvSjbgJ7AqJzlZEaM+hA2FAEtAs1wMRoI=
 github.com/namecoin/ncrpcclient v0.1.0 h1:dhzSGvaire6hadJsxFX9268Gce6E18wtVjAjG4SOHpo=
 github.com/namecoin/ncrpcclient v0.1.0/go.mod h1:bhsIDzYxt5ACJStqPBcAu3/4Cn5GNsgJxSoXHovlaP4=
 github.com/namecoin/qlib v0.0.6 h1:Nqg26PcJd7w5LFGrgBZEY0wd0/B2jn3i1Gr3P10i9jc=

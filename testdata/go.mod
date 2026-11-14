@@ -14,7 +14,7 @@ require (
 	github.com/miekg/dns v1.1.72
 	github.com/namecoin/crosssign v0.0.4
 	github.com/namecoin/ncbtcjson v0.1.0
-	github.com/namecoin/ncdns v0.3.3-0.20261112233535-1dfb2b4fb2f5
+	github.com/namecoin/ncdns v0.3.3-0.20261114014054-74ef29d2f18d
 	github.com/namecoin/ncrpcclient v0.1.0
 	github.com/namecoin/qlib v0.0.6
 	github.com/namecoin/safetlsa v0.0.7-0.20261112223122-6c9b6938753a
