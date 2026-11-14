@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"io"
 	"net/http"
@@ -215,6 +216,39 @@ func (s *Handlers) AIAHandler(writer http.ResponseWriter, req *http.Request) {
 
 	//nolint:gosec // G705: The response body is a DER certificate, not HTML.
 	_, err = writer.Write(requestedCert)
+	if err != nil {
+		log.Debuge(err, "write error")
+	}
+}
+
+func (s *Handlers) RevokedHandler(writer http.ResponseWriter, req *http.Request) {
+	writer.Header().Set("Content-Type", "application/json")
+
+	commonName := req.FormValue("domain")
+	subjectHashHex := req.FormValue("subsha256")
+	serialHashHex := req.FormValue("sersha256")
+
+	log.Debugf("Revocation lookup: %s, subject hash %s, serial hash %s", commonName, subjectHashHex, serialHashHex)
+
+	revoked, err := s.lookup.IsRevoked(commonName, subjectHashHex, serialHashHex)
+	if err != nil {
+		log.Debuge(err, "revocation lookup error")
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	revokedObject := map[string]bool {
+		"revoked": revoked,
+	}
+
+	revokedJSON, err := json.Marshal(revokedObject)
+	if err != nil {
+		log.Debuge(err, "revocation marshal error")
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	_, err = writer.Write(revokedJSON)
 	if err != nil {
 		log.Debuge(err, "write error")
 	}
