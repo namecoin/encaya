@@ -461,24 +461,30 @@ func (s *Lookup) LookupCerts(commonName, pubSHA256, pubB64, sigs, notAfter, piDi
 	return resultCerts, nil
 }
 
-func (s *Lookup) isRevokedNcdnsCache(commonName, subjectHashHex, serialHashHex string) (bool, error) {
-	subjectHashBytes, err := hex.DecodeString(subjectHashHex)
+func (s *Lookup) isRevokedNcdnsCache(domain, issuerHashHex, serialHex string) (bool, error) {
+	issuerHashBytes, err := hex.DecodeString(issuerHashHex)
 	if err != nil {
-		return false, fmt.Errorf("subject hash not valid hex")
+		return false, fmt.Errorf("issuer hash not valid hex")
 	}
 
-	serialHashBytes, err := hex.DecodeString(serialHashHex)
+	serialBytes, err := hex.DecodeString(serialHex)
 	if err != nil {
-		return false, fmt.Errorf("serial hash not valid hex")
+		return false, fmt.Errorf("serial not valid hex")
 	}
 
-	return tlshook.IsRevoked(commonName, subjectHashBytes, serialHashBytes)
+	return tlshook.IsRevoked(domain, issuerHashBytes, serialBytes)
 }
 
-func (s *Lookup) IsRevoked(commonName, subjectHashHex, serialHashHex string) (bool, error) {
+func (s *Lookup) IsRevoked(commonName, serialHex string) (bool, error) {
+	tokens := strings.Split(commonName, " ")
+	domain := tokens[0]
+
+	issuerHash := sha256.Sum256([]byte(commonName))
+	issuerHashHex := hex.EncodeToString(issuerHash[:])
+
 	if s.useNcdnsCache {
 		// Only use ncdns cache to avoid fingerprinting risk; does not work for standalone Encaya
-		return s.isRevokedNcdnsCache(commonName, subjectHashHex, serialHashHex)
+		return s.isRevokedNcdnsCache(domain, issuerHashHex, serialHex)
 	}
 
 	return false, fmt.Errorf("revocation check requires ncdns PKI cache")
