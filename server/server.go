@@ -131,6 +131,7 @@ func New(cfg *Config) (*Server, error) {
 	http.HandleFunc("/", h.IndexHandler)
 	http.HandleFunc("/lookup", h.LookupHandler)
 	http.HandleFunc("/aia", h.AIAHandler)
+	http.HandleFunc("/revoked", h.RevokedHandler)
 	http.HandleFunc("/get-new-negative-ca", h.GetNewNegativeCAHandler)
 	http.HandleFunc("/cross-sign-ca", h.CrossSignCAHandler)
 	http.HandleFunc("/original-from-serial", h.OriginalFromSerialHandler)
